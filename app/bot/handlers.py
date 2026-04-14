@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from html import escape
@@ -16,6 +18,15 @@ ITEMS_PER_PAGE = 10
 
 
 class TrackingHandlers:
+    _STATUS_ICONS = {
+        "CREATED": "🆕",
+        "PICKED_UP": "📥",
+        "IN_TRANSIT": "🚚",
+        "OUT_FOR_DELIVERY": "🛵",
+        "DELIVERED": "✅",
+        "FAILED": "❌",
+    }
+
     def __init__(self, i18n: I18n, tracking_service: TrackingService) -> None:
         self._i18n = i18n
         self._service = tracking_service
@@ -29,6 +40,26 @@ class TrackingHandlers:
     @staticmethod
     def _esc(value: object) -> str:
         return escape(str(value))
+
+    def _format_labeled_item(self, text: str, *, as_code: bool = False, as_italic: bool = False) -> str:
+        if ":" not in text:
+            return self._esc(text)
+
+        label, value = text.split(":", 1)
+        escaped_label = self._esc(label.strip())
+        escaped_value = self._esc(value.strip())
+
+        if as_code:
+            rendered_value = f"<code>{escaped_value}</code>"
+        elif as_italic:
+            rendered_value = f"<i>{escaped_value}</i>"
+        else:
+            rendered_value = escaped_value
+
+        return f"<b>{escaped_label}:</b> {rendered_value}"
+
+    def _status_icon(self, status_code: str) -> str:
+        return self._STATUS_ICONS.get(status_code, "📦")
 
     def _build_main_keyboard(self, lang: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
@@ -84,7 +115,7 @@ class TrackingHandlers:
             update=update,
             context=context,
             chat_id=chat_id,
-            text=f"✨ <b>{self._esc(self._i18n.t('help_intro', lang))}</b>",
+            text=f"<b>{self._esc(self._i18n.t('help_intro', lang))}</b>",
             reply_markup=self._build_main_keyboard(lang),
             parse_mode="HTML",
         )
@@ -95,7 +126,7 @@ class TrackingHandlers:
 
         lang = self._get_user_lang(context)
         await update.message.reply_text(
-            f"✨ <b>{self._esc(self._i18n.t('help_intro', lang))}</b>",
+            f"<b>{self._esc(self._i18n.t('help_intro', lang))}</b>",
             reply_markup=self._build_main_keyboard(lang),
             parse_mode="HTML",
         )
@@ -111,7 +142,7 @@ class TrackingHandlers:
         )
 
     async def _send_help_intro(self, chat_id: int, update: Update, context: CallbackContext, lang: str, edit_message: bool = False) -> None:
-        text = f"✨ <b>{self._esc(self._i18n.t('help_intro', lang))}</b>"
+        text = f"<b>{self._esc(self._i18n.t('help_intro', lang))}</b>"
         keyboard = InlineKeyboardMarkup(
             [
                 [
@@ -148,9 +179,9 @@ class TrackingHandlers:
             )
 
     async def _send_help_profile(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
-        text = f"👤 <b>{self._esc(self._i18n.t('help_profile', lang))}</b>\n\n"
-        text += f"🆔 <b>Chat ID:</b> <code>{chat_id}</code>\n"
-        text += f"🌐 <b>Language:</b> <i>{self._esc(self._i18n.language_name(lang, lang))}</i>"
+        text = f"<b>{self._esc(self._i18n.t('help_profile', lang))}</b>\n\n"
+        text += f"<b>Chat ID:</b> <code>{chat_id}</code>\n"
+        text += f"<b>Language:</b> <i>{self._esc(self._i18n.language_name(lang, lang))}</i>"
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -161,13 +192,13 @@ class TrackingHandlers:
         await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _send_help_command(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
-        text = f"📚 <b>{self._esc(self._i18n.t('help_command', lang))}</b>\n\n"
-        text += "• <code>/start</code> - Main menu\n"
-        text += "• <code>/list</code> - List orders\n"
-        text += "• <code>/add</code> - Add tracking code\n"
-        text += "• <code>/remove</code> - Remove tracking code\n"
-        text += "• <code>/help</code> - Show help\n"
-        text += "• <code>/lang</code> - Change language"
+        text = f"<b>{self._esc(self._i18n.t('help_command', lang))}</b>\n\n"
+        text += "🏠 <code>/start</code> - Main menu\n"
+        text += "📋 <code>/list</code> - List orders\n"
+        text += "➕ <code>/add</code> - Add tracking code\n"
+        text += "🗑️ <code>/remove</code> - Remove tracking code\n"
+        text += "ℹ️ <code>/help</code> - Show help\n"
+        text += "🌐 <code>/lang</code> - Change language"
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -178,10 +209,10 @@ class TrackingHandlers:
         await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _send_help_language(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
-        text = f"🌐 <b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
+        text = f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
         text += "<i>Available languages:</i>\n"
         for lang_code in self._i18n.supported_languages():
-            text += f"• {self._esc(self._i18n.language_name(lang_code, lang))}\n"
+            text += f"🌍 {self._esc(self._i18n.language_name(lang_code, lang))}\n"
 
         buttons = []
         for lang_code in self._i18n.supported_languages():
@@ -224,7 +255,7 @@ class TrackingHandlers:
 
         if data == "lang:list":
             lang = self._get_user_lang(context)
-            text = f"🌐 <b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
+            text = f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
             text += "<i>Available languages:</i>"
 
             buttons = []
@@ -244,7 +275,7 @@ class TrackingHandlers:
         elif data.startswith("lang:set:"):
             new_lang = data.split(":")[-1]
             self._set_user_lang(context, new_lang)
-            text = f"✅ <b>{self._esc(self._i18n.t('lang_changed', new_lang))}</b>"
+            text = f"<b>{self._esc(self._i18n.t('lang_changed', new_lang))}</b>"
             await query.edit_message_text(
                 text,
                 reply_markup=InlineKeyboardMarkup(
@@ -276,19 +307,20 @@ class TrackingHandlers:
         trackings = self._service.list_trackings(chat_id)
 
         if not trackings:
-            text = f"📭 <b>{self._esc(self._i18n.t('list_empty', lang))}</b>"
+            text = f"<b>{self._esc(self._i18n.t('list_empty', lang))}</b>"
             keyboard = InlineKeyboardMarkup(
                 [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")]]
             )
             await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
             return
 
-        text = f"📦 <b>{self._esc(self._i18n.t('list_header', lang))}</b>\n\n"
+        text = f"<b>{self._esc(self._i18n.t('list_header', lang))}</b>\n\n"
         text += "<i>Tap an order below to view details.</i>"
         buttons = []
         for tracking in trackings:
             status_text = self._i18n.status(tracking.last_status, lang)
-            display_text = f"📌 {tracking.tracking_code} • {status_text}"
+            status_icon = self._status_icon(tracking.last_status)
+            display_text = f"📦 {tracking.tracking_code} • {status_icon} {status_text}"
             buttons.append(
                 [InlineKeyboardButton(display_text, callback_data=f"order:{tracking.id}")]
             )
@@ -312,19 +344,20 @@ class TrackingHandlers:
             await query.answer("Order not found", show_alert=True)
             return
 
-        text = "📦 <b>Order Detail</b>\n\n"
-        text += f"🔢 <b>Code:</b> <code>{self._esc(tracking.tracking_code)}</code>\n"
-        text += f"🚚 <b>Carrier:</b> {self._esc(tracking.carrier.name)}\n"
-        text += f"📊 <b>Status:</b> <b>{self._esc(self._i18n.status(tracking.last_status, lang))}</b>\n"
+        text = f"<b>{self._esc(self._i18n.t('help_order_detail', lang))}</b>\n\n"
+        text += f"🔖 {self._format_labeled_item(self._i18n.t('detail_code', lang, code=tracking.tracking_code), as_code=True)}\n"
+        text += f"🚚 {self._format_labeled_item(self._i18n.t('detail_carrier', lang, carrier=tracking.carrier.name))}\n"
+        status_icon = self._status_icon(tracking.last_status)
+        text += f"{status_icon} {self._format_labeled_item(self._i18n.t('detail_status', lang, status=self._i18n.status(tracking.last_status, lang)))}\n"
 
         events = self._service.get_tracking_events(chat_id, tracking_id)
         if events:
             latest = events[-1]
             if latest.location:
-                text += f"📍 <b>Location:</b> <i>{self._esc(latest.location[:60])}</i>\n"
+                text += f"📍 {self._format_labeled_item(self._i18n.t('detail_location', lang, location=latest.location[:60]), as_italic=True)}\n"
             if latest.event_time:
                 formatted_time = latest.event_time.strftime("%d/%m/%Y %H:%M") if isinstance(latest.event_time, datetime) else str(latest.event_time)
-                text += f"🕒 <b>Updated:</b> <code>{self._esc(formatted_time)}</code>"
+                text += f"🕒 {self._format_labeled_item(self._i18n.t('detail_time', lang, time=formatted_time), as_code=True)}"
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -374,8 +407,8 @@ class TrackingHandlers:
         page_events = events[start_idx:end_idx]
 
         text = (
-            f"📅 <b>{self._esc(self._i18n.t('help_timeline_title', lang))}</b>\n"
-            f"🔢 <code>{self._esc(tracking.tracking_code)}</code>\n"
+            f"<b>{self._esc(self._i18n.t('help_timeline_title', lang))}</b>\n"
+            f"📦 <code>{self._esc(tracking.tracking_code)}</code>\n"
             f"🚚 {self._esc(tracking.carrier.name)}\n\n"
         )
 
@@ -386,7 +419,8 @@ class TrackingHandlers:
             event_num = start_idx + i + 1
             formatted_time = event.event_time.strftime("%d/%m %H:%M") if isinstance(event.event_time, datetime) else str(event.event_time)
             status_text = self._i18n.status(event.status, lang)
-            text += f"<b>{event_num}.</b> <code>{self._esc(formatted_time)}</code> • <b>{self._esc(status_text)}</b>\n"
+            status_icon = self._status_icon(event.status)
+            text += f"<b>{event_num}.</b> 🕒 <code>{self._esc(formatted_time)}</code> • {status_icon} <b>{self._esc(status_text)}</b>\n"
             if event.location:
                 text += f"📍 <i>{self._esc(event.location[:60])}</i>\n"
             if event.description:
@@ -400,7 +434,7 @@ class TrackingHandlers:
                 callback_data=f"order_timeline:{tracking_id}:{page - 1}" if page > 0 else "noop",
             ),
             InlineKeyboardButton(
-                self._i18n.t("pagination", lang, page=page + 1, total=total_pages),
+                f"[{self._i18n.t('pagination', lang, page=page + 1, total=total_pages)}]",
                 callback_data="noop",
             ),
             InlineKeyboardButton(
@@ -423,7 +457,7 @@ class TrackingHandlers:
         await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _show_add_carrier_selection(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
-        text = f"🚚 <b>{self._esc(self._i18n.t('add_select_carrier', lang))}</b>"
+        text = f"<b>{self._esc(self._i18n.t('add_select_carrier', lang))}</b>"
 
         buttons = []
         for carrier_code, carrier_name in [("jtexpress", "JT Express"), ("shopeeexpress", "Shopee Express")]:
@@ -450,7 +484,7 @@ class TrackingHandlers:
         )
 
         await query.edit_message_text(
-            f"✍️ <b>{self._esc(text)}</b>\n\n<i>Example:</i> <code>SPXVN123456789</code>",
+            f"<b>{self._esc(text)}</b>\n\n🔎 <i>Example:</i> <code>SPXVN123456789</code>",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -475,11 +509,11 @@ class TrackingHandlers:
                 carrier=tracking.carrier.name,
                 status=status_text,
             )
-            text = f"✅ <b>{self._esc(raw_text)}</b>"
+            text = f"<b>{self._esc(raw_text)}</b>"
         except ValueError as e:
             error_key = str(e)
             msg = self._i18n.t(error_key, lang) if self._i18n.has_key(error_key, lang) else "Error adding tracking"
-            text = f"❌ <b>{self._esc(msg)}</b>"
+            text = f"<b>{self._esc(msg)}</b>"
 
         context.user_data.pop("add_waiting_carrier", None)
         context.user_data.pop("add_waiting_chat_id", None)
@@ -512,7 +546,7 @@ class TrackingHandlers:
 
         self._service.remove_tracking(chat_id, tracking.tracking_code)
 
-        text = f"🗑️ <b>{self._esc(self._i18n.t('remove_success', lang, code=tracking.tracking_code))}</b>"
+        text = f"<b>{self._esc(self._i18n.t('remove_success', lang, code=tracking.tracking_code))}</b>"
         keyboard = InlineKeyboardMarkup(
             [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:list")]]
         )
@@ -548,7 +582,7 @@ class TrackingHandlers:
         trackings = self._service.list_trackings(chat_id)
 
         if not trackings:
-            text = f"📭 <b>{self._esc(self._i18n.t('list_empty', lang))}</b>"
+            text = f"<b>{self._esc(self._i18n.t('list_empty', lang))}</b>"
             await update.message.reply_text(text, parse_mode="HTML")
             return
 
@@ -567,7 +601,7 @@ class TrackingHandlers:
         await update.message.delete()
         await context.bot.send_message(
             chat_id=chat_id,
-            text="🗑️ <b>Select order to remove:</b>",
+            text="<b>Select order to remove:</b>",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -588,7 +622,7 @@ class TrackingHandlers:
         keyboard = InlineKeyboardMarkup([buttons])
 
         await update.message.reply_text(
-            f"🌐 <b>{self._esc(self._i18n.t('help_language', lang))}</b>",
+            f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>",
             reply_markup=keyboard,
             parse_mode="HTML",
         )

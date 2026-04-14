@@ -20,7 +20,10 @@ fi
 
 # Check if requirements are installed
 echo -e "${YELLOW}Checking dependencies...${NC}"
-pip install -q -r requirements.txt 2>&1 | grep -v "already satisfied" || true
+if ! pip install -q -r requirements.txt; then
+    echo -e "${RED}❌ Failed to install dependencies${NC}"
+    exit 1
+fi
 
 # Check if .env file exists
 if [ ! -f ".env" ]; then
