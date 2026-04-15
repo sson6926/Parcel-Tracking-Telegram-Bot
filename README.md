@@ -1,6 +1,7 @@
 # Tracking Shopee - Telegram Bot
 
 Bot Telegram để theo dõi trạng thái đơn hàng từ các hệ thống vận chuyển khác nhau (Shopee Express, JT Express)
+Check it out: @shippingtrackers_bot on Telegram
 
 ## Tính năng
 
