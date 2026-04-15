@@ -107,7 +107,10 @@ class TrackingService:
         provider: TrackingProvider,
         *,
         require_history: bool = False,
-    ) -> None:
+    ) -> list[NotificationDTO]:
+        """Sync tracking history and return list of new events."""
+        new_events: list[NotificationDTO] = []
+        
         history = provider.fetch_event_history(tracking.tracking_code)
         if not history:
             if require_history:
@@ -119,7 +122,7 @@ class TrackingService:
             history = [latest]
 
         if not history:
-            return
+            return new_events
 
         existing_hashes = {
             row[0]
@@ -133,10 +136,23 @@ class TrackingService:
                 continue
             self._insert_event_if_new(session, tracking, event)
             existing_hashes.add(event.event_hash)
+            # Track new event for notification
+            new_events.append(
+                NotificationDTO(
+                    tracking_code=tracking.tracking_code,
+                    carrier_code=tracking.carrier.code,
+                    status=event.status,
+                    description=event.description,
+                    location=event.location,
+                    event_time=event.event_time,
+                )
+            )
 
         latest_event = history[-1]
         tracking.last_status = latest_event.status.value
         tracking.last_event_hash = latest_event.event_hash
+        
+        return new_events
 
     def add_tracking(self, telegram_chat_id: int, tracking_code: str, carrier_code_override: str | None = None) -> Tracking:
         normalized_code = tracking_code.strip().upper()

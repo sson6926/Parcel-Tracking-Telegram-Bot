@@ -52,6 +52,7 @@ def setup_sentry() -> None:
         release=release,
         traces_sample_rate=traces_sample_rate,
         send_default_pii=send_default_pii,
+        enable_logs=True,
         integrations=[sentry_logging],
     )
     logger.info(
@@ -177,8 +178,8 @@ def main() -> None:
     # Add error handler
     application.add_error_handler(error_handler)
 
-    # Setup scheduler
-    scheduler = TrackingScheduler(session_factory, tracking_service)
+    # Setup scheduler with the application instance
+    scheduler = TrackingScheduler(session_factory, tracking_service, application=application)
     scheduler.start()
 
     logger.info("Bot application started successfully")
