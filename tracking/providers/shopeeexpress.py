@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
-from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import httpx
 
 from tracking.parsers import detect_and_parse
-from tracking.providers.base import TrackingProvider, compute_event_hash
+from tracking.providers.base import InvalidTrackingCodeError, TrackingProvider, compute_event_hash
 from tracking.types import TrackingEventDTO, TrackingStatus
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,7 @@ class ShopeeExpressProvider(TrackingProvider):
     def fetch_event_history(self, tracking_code: str) -> list[TrackingEventDTO]:
         payload = self._fetch_live_payload(tracking_code)
         if payload is None:
-            payload = self._read_sample_payload("shopeeexpress.md")
+            logger.warning("Shopee live payload unavailable for %s", tracking_code)
 
         if not payload or payload.get("format") != "shopeeexpress":
             return []
@@ -88,8 +88,18 @@ class ShopeeExpressProvider(TrackingProvider):
         }
 
         try:
+            started_at = perf_counter()
+            logger.debug("Shopee API request start: tracking_code=%s", tracking_code)
             with httpx.Client(timeout=self._timeout_seconds) as client:
                 response = client.get(self._api_url, params=params, headers=headers)
+            elapsed_ms = int((perf_counter() - started_at) * 1000)
+
+            logger.debug(
+                "Shopee API response: tracking_code=%s status=%s elapsed_ms=%s",
+                tracking_code,
+                response.status_code,
+                elapsed_ms,
+            )
 
             if response.status_code != 200:
                 logger.warning(
@@ -100,6 +110,14 @@ class ShopeeExpressProvider(TrackingProvider):
                 return None
 
             payload = response.json()
+            if self._is_invalid_tracking_response(payload):
+                logger.warning(
+                    "Shopee API invalid tracking code signal for %s: %s",
+                    tracking_code,
+                    payload.get("message"),
+                )
+                raise InvalidTrackingCodeError(f"Invalid Shopee tracking code: {tracking_code}")
+
             if payload.get("retcode") != 0:
                 logger.warning(
                     "Shopee API returned retcode=%s for %s",
@@ -108,24 +126,30 @@ class ShopeeExpressProvider(TrackingProvider):
                 )
                 return None
 
-            return detect_and_parse(response.text)
+            parsed = detect_and_parse(response.text)
+            logger.debug(
+                "Shopee API parse success: tracking_code=%s format=%s events=%s",
+                tracking_code,
+                parsed.get("format") if isinstance(parsed, dict) else None,
+                len(parsed.get("events") or []) if isinstance(parsed, dict) else 0,
+            )
+            return parsed
+        except InvalidTrackingCodeError:
+            raise
         except Exception:
             logger.exception("Failed to fetch live Shopee status for %s", tracking_code)
             return None
 
     @staticmethod
-    def _read_sample_payload(filename: str) -> dict[str, Any] | None:
-        root_dir = Path(__file__).resolve().parents[2]
-        sample_path = root_dir / filename
+    def _is_invalid_tracking_response(payload: dict[str, Any]) -> bool:
+        retcode = payload.get("retcode")
+        if retcode == -1000:
+            return True
 
-        if not sample_path.exists():
-            return None
-
-        raw = sample_path.read_text(encoding="utf-8").strip()
-        if not raw:
-            return None
-
-        try:
-            return detect_and_parse(raw)
-        except Exception:
-            return None
+        message = str(payload.get("message") or "").lower()
+        invalid_markers = (
+            "retcode:-2023002",
+            "get logistic order index map error",
+            "ref record not unique",
+        )
+        return retcode == 2 and any(marker in message for marker in invalid_markers)

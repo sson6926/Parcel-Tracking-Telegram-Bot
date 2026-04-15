@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import logging
-from pathlib import Path
-from typing import Any
+from time import perf_counter
 
 import httpx
 
@@ -76,18 +75,31 @@ class JTExpressProvider(TrackingProvider):
 
     def _detect_status_from_html(self, tracking_code: str) -> TrackingStatus:
         try:
+            started_at = perf_counter()
+            logger.debug("JT page request start: tracking_code=%s", tracking_code)
             headers = {
                 "user-agent": "Mozilla/5.0",
             }
             with httpx.Client(timeout=self._timeout_seconds) as client:
                 response = client.get(self._tracking_url, headers=headers)
+            elapsed_ms = int((perf_counter() - started_at) * 1000)
+
+            logger.debug(
+                "JT page response: tracking_code=%s status=%s elapsed_ms=%s",
+                tracking_code,
+                response.status_code,
+                elapsed_ms,
+            )
 
             html = response.text.lower()
             if "giao hang thanh cong" in html or "da giao" in html:
+                logger.debug("JT detected status DELIVERED for %s", tracking_code)
                 return TrackingStatus.DELIVERED
             if "dang giao" in html:
+                logger.debug("JT detected status OUT_FOR_DELIVERY for %s", tracking_code)
                 return TrackingStatus.OUT_FOR_DELIVERY
         except Exception:
             logger.warning("Failed to fetch JT Express status for %s", tracking_code)
 
+        logger.debug("JT fallback status IN_TRANSIT for %s", tracking_code)
         return TrackingStatus.IN_TRANSIT

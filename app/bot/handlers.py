@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import CallbackContext, ConversationHandler
 
 from app.core.i18n import I18n
@@ -61,6 +63,52 @@ class TrackingHandlers:
     def _status_icon(self, status_code: str) -> str:
         return self._STATUS_ICONS.get(status_code, "📦")
 
+    @staticmethod
+    def _split_tracking_code_for_buttons(tracking_code: str) -> tuple[str, str, str]:
+        code = (tracking_code or "").strip()
+        if not code:
+            return ("-", "-", "-")
+
+        # Keep 3 middle cells balanced so the row visually matches 1/5 - 3/5 - 1/5.
+        base = len(code) // 3
+        remainder = len(code) % 3
+        sizes = [base, base, base]
+        for i in range(remainder):
+            sizes[i] += 1
+
+        chunks: list[str] = []
+        cursor = 0
+        for size in sizes:
+            if size <= 0:
+                chunks.append("-")
+                continue
+            chunks.append(code[cursor:cursor + size])
+            cursor += size
+
+        while len(chunks) < 3:
+            chunks.append("-")
+
+        return chunks[0], chunks[1], chunks[2]
+
+    async def _safe_edit_message_text(
+        self,
+        query,
+        text: str,
+        reply_markup: InlineKeyboardMarkup,
+        parse_mode: str | None = None,
+    ) -> None:
+        try:
+            await query.edit_message_text(
+                text,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode,
+            )
+        except BadRequest as exc:
+            if "message is not modified" in str(exc).lower():
+                logger.debug("Skip edit_message_text because content is unchanged")
+                return
+            raise
+
     def _build_main_keyboard(self, lang: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             [
@@ -97,7 +145,8 @@ class TrackingHandlers:
         parse_mode: str | None = None,
     ) -> None:
         if update.callback_query:
-            await update.callback_query.edit_message_text(
+            await self._safe_edit_message_text(
+                update.callback_query,
                 text,
                 reply_markup=reply_markup,
                 parse_mode=parse_mode,
@@ -165,7 +214,8 @@ class TrackingHandlers:
         )
 
         if edit_message and update.callback_query:
-            await update.callback_query.edit_message_text(
+            await self._safe_edit_message_text(
+                update.callback_query,
                 text,
                 reply_markup=keyboard,
                 parse_mode="HTML",
@@ -179,9 +229,24 @@ class TrackingHandlers:
             )
 
     async def _send_help_profile(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
+        summary = self._service.get_user_profile_summary(chat_id)
+        joined_at = summary.get("joined_at")
+        if isinstance(joined_at, datetime):
+            joined_value = joined_at.strftime("%d/%m/%Y %H:%M")
+        else:
+            joined_value = self._i18n.t("profile_not_available", lang)
+
         text = f"<b>{self._esc(self._i18n.t('help_profile', lang))}</b>\n\n"
-        text += f"<b>Chat ID:</b> <code>{chat_id}</code>\n"
-        text += f"<b>Language:</b> <i>{self._esc(self._i18n.language_name(lang, lang))}</i>"
+        text += f"<b>{self._esc(self._i18n.t('label_chat_id', lang))}:</b> <code>{chat_id}</code>\n"
+        text += f"<b>{self._esc(self._i18n.t('label_language', lang))}:</b> <i>{self._esc(self._i18n.language_name(lang, lang))}</i>"
+        text += "\n\n"
+        text += f"<b>{self._esc(self._i18n.t('profile_stats_title', lang))}</b>\n"
+        text += f"• {self._esc(self._i18n.t('profile_joined_at', lang, value=joined_value))}\n"
+        text += f"• {self._esc(self._i18n.t('profile_total_orders', lang, value=summary.get('total_orders', 0)))}\n"
+        text += f"• {self._esc(self._i18n.t('profile_active_orders', lang, value=summary.get('active_orders', 0)))}\n"
+        text += f"• {self._esc(self._i18n.t('profile_delivered_orders', lang, value=summary.get('delivered_orders', 0)))}\n"
+        text += f"• {self._esc(self._i18n.t('profile_failed_orders', lang, value=summary.get('failed_orders', 0)))}\n"
+        text += f"• {self._esc(self._i18n.t('profile_carriers_used', lang, value=summary.get('carriers_used', 0)))}"
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -189,16 +254,16 @@ class TrackingHandlers:
             ]
         )
 
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _send_help_command(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
         text = f"<b>{self._esc(self._i18n.t('help_command', lang))}</b>\n\n"
-        text += "🏠 <code>/start</code> - Main menu\n"
-        text += "📋 <code>/list</code> - List orders\n"
-        text += "➕ <code>/add</code> - Add tracking code\n"
-        text += "🗑️ <code>/remove</code> - Remove tracking code\n"
-        text += "ℹ️ <code>/help</code> - Show help\n"
-        text += "🌐 <code>/lang</code> - Change language"
+        text += f"🏠 <code>/start</code> - {self._esc(self._i18n.t('cmd_desc_start', lang))}\n"
+        text += f"📋 <code>/list</code> - {self._esc(self._i18n.t('cmd_desc_list', lang))}\n"
+        text += f"➕ <code>/add</code> - {self._esc(self._i18n.t('cmd_desc_add', lang))}\n"
+        text += f"🗑️ <code>/remove</code> - {self._esc(self._i18n.t('cmd_desc_remove', lang))}\n"
+        text += f"ℹ️ <code>/help</code> - {self._esc(self._i18n.t('cmd_desc_help', lang))}\n"
+        text += f"🌐 <code>/lang</code> - {self._esc(self._i18n.t('cmd_desc_lang', lang))}"
 
         keyboard = InlineKeyboardMarkup(
             [
@@ -206,11 +271,11 @@ class TrackingHandlers:
             ]
         )
 
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _send_help_language(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
         text = f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
-        text += "<i>Available languages:</i>\n"
+        text += f"<i>{self._esc(self._i18n.t('available_languages', lang))}</i>\n"
         for lang_code in self._i18n.supported_languages():
             text += f"🌍 {self._esc(self._i18n.language_name(lang_code, lang))}\n"
 
@@ -227,7 +292,7 @@ class TrackingHandlers:
             [buttons, [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")]]
         )
 
-        await update.callback_query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
 
     async def help_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
@@ -256,7 +321,7 @@ class TrackingHandlers:
         if data == "lang:list":
             lang = self._get_user_lang(context)
             text = f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
-            text += "<i>Available languages:</i>"
+            text += f"<i>{self._esc(self._i18n.t('available_languages', lang))}</i>"
 
             buttons = []
             for lang_code in self._i18n.supported_languages():
@@ -271,12 +336,13 @@ class TrackingHandlers:
                 [buttons, [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")]]
             )
 
-            await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+            await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
         elif data.startswith("lang:set:"):
             new_lang = data.split(":")[-1]
             self._set_user_lang(context, new_lang)
             text = f"<b>{self._esc(self._i18n.t('lang_changed', new_lang))}</b>"
-            await query.edit_message_text(
+            await self._safe_edit_message_text(
+                query,
                 text,
                 reply_markup=InlineKeyboardMarkup(
                     [[InlineKeyboardButton("OK", callback_data="cmd:menu")]]
@@ -315,14 +381,19 @@ class TrackingHandlers:
             return
 
         text = f"<b>{self._esc(self._i18n.t('list_header', lang))}</b>\n\n"
-        text += "<i>Tap an order below to view details.</i>"
+        text += f"<i>{self._esc(self._i18n.t('tap_order_hint', lang))}</i>"
         buttons = []
         for tracking in trackings:
-            status_text = self._i18n.status(tracking.last_status, lang)
             status_icon = self._status_icon(tracking.last_status)
-            display_text = f"📦 {tracking.tracking_code} • {status_icon} {status_text}"
+            code_1, code_2, code_3 = self._split_tracking_code_for_buttons(tracking.tracking_code)
             buttons.append(
-                [InlineKeyboardButton(display_text, callback_data=f"order:{tracking.id}")]
+                [
+                    InlineKeyboardButton(status_icon, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton(code_1, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton(code_2, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton(code_3, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton("🗑️", callback_data=f"remove:{tracking.id}"),
+                ]
             )
 
         buttons.append([InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")])
@@ -341,7 +412,7 @@ class TrackingHandlers:
 
         tracking = self._service.get_tracking_detail(chat_id, tracking_id)
         if tracking is None:
-            await query.answer("Order not found", show_alert=True)
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
             return
 
         text = f"<b>{self._esc(self._i18n.t('help_order_detail', lang))}</b>\n\n"
@@ -375,7 +446,7 @@ class TrackingHandlers:
             ]
         )
 
-        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
 
     async def order_timeline_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
@@ -389,7 +460,7 @@ class TrackingHandlers:
 
         tracking = self._service.get_tracking_detail(chat_id, tracking_id)
         if tracking is None:
-            await query.answer("Order not found", show_alert=True)
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
             return
 
         events = self._service.get_tracking_events(chat_id, tracking_id)
@@ -413,7 +484,7 @@ class TrackingHandlers:
         )
 
         if not page_events:
-            text += "<i>No timeline events yet.</i>\n\n"
+            text += f"<i>{self._esc(self._i18n.t('timeline_empty', lang))}</i>\n\n"
 
         for i, event in enumerate(page_events):
             event_num = start_idx + i + 1
@@ -428,18 +499,20 @@ class TrackingHandlers:
             text += "\n"
 
         buttons = []
+        prev_page = total_pages - 1 if page == 0 else page - 1
+        next_page = 0 if page == total_pages - 1 else page + 1
         nav_buttons = [
             InlineKeyboardButton(
                 self._i18n.t("btn_prev", lang),
-                callback_data=f"order_timeline:{tracking_id}:{page - 1}" if page > 0 else "noop",
+                callback_data=f"order_timeline:{tracking_id}:{prev_page}",
             ),
             InlineKeyboardButton(
-                f"[{self._i18n.t('pagination', lang, page=page + 1, total=total_pages)}]",
+                f"[{page + 1}/{total_pages}]",
                 callback_data="noop",
             ),
             InlineKeyboardButton(
                 self._i18n.t("btn_next", lang),
-                callback_data=f"order_timeline:{tracking_id}:{page + 1}" if page < total_pages - 1 else "noop",
+                callback_data=f"order_timeline:{tracking_id}:{next_page}",
             ),
         ]
 
@@ -454,7 +527,7 @@ class TrackingHandlers:
         )
 
         keyboard = InlineKeyboardMarkup(buttons)
-        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _show_add_carrier_selection(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
         text = f"<b>{self._esc(self._i18n.t('add_select_carrier', lang))}</b>"
@@ -483,8 +556,9 @@ class TrackingHandlers:
             [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:add")]]
         )
 
-        await query.edit_message_text(
-            f"<b>{self._esc(text)}</b>\n\n🔎 <i>Example:</i> <code>SPXVN123456789</code>",
+        await self._safe_edit_message_text(
+            query,
+            f"<b>{self._esc(text)}</b>\n\n🔎 <i>{self._esc(self._i18n.t('example_label', lang))}:</i> <code>SPXVN123456789</code>",
             reply_markup=keyboard,
             parse_mode="HTML",
         )
@@ -512,7 +586,7 @@ class TrackingHandlers:
             text = f"<b>{self._esc(raw_text)}</b>"
         except ValueError as e:
             error_key = str(e)
-            msg = self._i18n.t(error_key, lang) if self._i18n.has_key(error_key, lang) else "Error adding tracking"
+            msg = self._i18n.t(error_key, lang) if self._i18n.has_key(error_key, lang) else self._i18n.t("error_add_tracking_generic", lang)
             text = f"<b>{self._esc(msg)}</b>"
 
         context.user_data.pop("add_waiting_carrier", None)
@@ -531,6 +605,51 @@ class TrackingHandlers:
 
         return ConversationHandler.END
 
+    async def auto_add_shopee_from_message(self, update: Update, context: CallbackContext) -> None:
+        if update.message is None:
+            return
+
+        # If user is in interactive add flow, keep current behavior unchanged.
+        if context.user_data.get("add_waiting_carrier") is not None:
+            return
+
+        raw_text = update.message.text or ""
+        match = re.match(r"^\s*(SPXVN[0-9A-Z]+)", raw_text, flags=re.IGNORECASE)
+        if not match:
+            return
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        tracking_code = match.group(1).upper()
+
+        try:
+            tracking = self._service.add_tracking(chat_id, tracking_code, "shopeeexpress")
+            status_text = self._i18n.status(tracking.last_status, lang)
+            raw_success = self._i18n.t(
+                "add_success",
+                lang,
+                code=tracking.tracking_code,
+                carrier=tracking.carrier.name,
+                status=status_text,
+            )
+            text = f"<b>{self._esc(raw_success)}</b>"
+        except ValueError as e:
+            error_key = str(e)
+            msg = self._i18n.t(error_key, lang) if self._i18n.has_key(error_key, lang) else self._i18n.t("error_add_tracking_generic", lang)
+            text = f"<b>{self._esc(msg)}</b>"
+
+        try:
+            await update.message.delete()
+        except Exception:
+            pass
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=self._build_main_keyboard(lang),
+            parse_mode="HTML",
+        )
+
     async def remove_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
         await query.answer()
@@ -541,17 +660,12 @@ class TrackingHandlers:
 
         tracking = self._service.get_tracking_detail(chat_id, tracking_id)
         if tracking is None:
-            await query.answer("Order not found", show_alert=True)
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
             return
 
         self._service.remove_tracking(chat_id, tracking.tracking_code)
-
-        text = f"<b>{self._esc(self._i18n.t('remove_success', lang, code=tracking.tracking_code))}</b>"
-        keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:list")]]
-        )
-
-        await query.edit_message_text(text, reply_markup=keyboard, parse_mode="HTML")
+        await query.answer(self._i18n.t("remove_success", lang, code=tracking.tracking_code), show_alert=False)
+        await self._show_order_list(chat_id, update, context, lang)
 
     async def add_command(self, update: Update, context: CallbackContext) -> int:
         chat_id = update.effective_chat.id
@@ -601,7 +715,7 @@ class TrackingHandlers:
         await update.message.delete()
         await context.bot.send_message(
             chat_id=chat_id,
-            text="<b>Select order to remove:</b>",
+            text=f"<b>{self._esc(self._i18n.t('remove_select_prompt', lang))}</b>",
             reply_markup=keyboard,
             parse_mode="HTML",
         )

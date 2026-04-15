@@ -6,6 +6,10 @@ from hashlib import sha256
 from tracking.types import TrackingEventDTO, TrackingStatus
 
 
+class InvalidTrackingCodeError(Exception):
+    """Raised when provider confirms tracking code is invalid."""
+
+
 class TrackingProvider(ABC):
     carrier_code: str
 

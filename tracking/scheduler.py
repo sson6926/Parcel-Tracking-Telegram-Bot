@@ -49,6 +49,12 @@ class TrackingScheduler:
                 )
             ).all()
 
+            logger.info(
+                "[Scheduler] %s: Checking %d active orders for update...",
+                now.strftime("%Y-%m-%d %H:%M:%S"),
+                len(trackings),
+            )
+
             for tracking in trackings:
                 provider = self._provider_registry.get(tracking.carrier.code)
                 if provider is None:
@@ -65,4 +71,4 @@ class TrackingScheduler:
                 except Exception:
                     logger.exception("Failed to check tracking %d", tracking.id)
 
-        logger.debug("Tracking check_updates completed")
+        logger.info("[Scheduler] Tick completed.")

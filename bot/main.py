@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
 from telegram import Update
 from telegram.ext import Application, CallbackContext
 
@@ -21,9 +23,49 @@ from tracking.service import TrackingService
 logger = logging.getLogger(__name__)
 
 
+def setup_sentry() -> None:
+    """Initialize Sentry if SENTRY_DSN is configured."""
+    dsn = os.getenv("SENTRY_DSN", "").strip()
+    if not dsn:
+        logger.info("Sentry disabled (SENTRY_DSN is not set)")
+        return
+
+    environment = os.getenv("SENTRY_ENVIRONMENT", "production")
+    release = os.getenv("SENTRY_RELEASE")
+
+    try:
+        traces_sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0"))
+    except ValueError:
+        traces_sample_rate = 0.0
+
+    send_default_pii_raw = os.getenv("SENTRY_SEND_DEFAULT_PII", "false").strip().lower()
+    send_default_pii = send_default_pii_raw in {"1", "true", "yes", "on"}
+
+    sentry_logging = LoggingIntegration(
+        level=logging.INFO,
+        event_level=logging.WARNING,
+    )
+
+    sentry_sdk.init(
+        dsn=dsn,
+        environment=environment,
+        release=release,
+        traces_sample_rate=traces_sample_rate,
+        send_default_pii=send_default_pii,
+        integrations=[sentry_logging],
+    )
+    logger.info(
+        "Sentry initialized for environment '%s' (send_default_pii=%s)",
+        environment,
+        send_default_pii,
+    )
+
+
 async def error_handler(update: Update, context: CallbackContext) -> None:
     """Handle errors by logging them and alerting the user if possible."""
     logger.error("Exception while handling an update:", exc_info=context.error)
+    if context.error:
+        sentry_sdk.capture_exception(context.error)
     
     if update and update.callback_query:
         try:
@@ -56,6 +98,7 @@ def main() -> None:
     """Main entry point"""
     load_dotenv()
     setup_logging()
+    setup_sentry()
 
     bot_token = os.getenv("BOT_TOKEN", "your-token-here")
     if bot_token == "your-token-here":
@@ -122,6 +165,14 @@ def main() -> None:
         fallbacks=[CommandHandler("start", handlers.start_command)],
     )
     application.add_handler(conv_handler)
+
+    # Auto-add Shopee order when message starts with SPXVN...
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND & filters.Regex(r"(?i)^\s*SPXVN"),
+            handlers.auto_add_shopee_from_message,
+        )
+    )
 
     # Add error handler
     application.add_error_handler(error_handler)

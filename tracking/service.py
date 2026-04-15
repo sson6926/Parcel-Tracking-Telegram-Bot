@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from db.models import Carrier, Tracking, TrackingEvent, User
 from tracking.providers import build_provider_registry
-from tracking.providers.base import TrackingProvider
+from tracking.providers.base import InvalidTrackingCodeError, TrackingProvider
 from tracking.types import NotificationDTO, TrackingStatus
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,19 @@ class TrackingService:
             return "jtexpress"
 
         return None
+
+    @staticmethod
+    def _is_valid_for_carrier(tracking_code: str, carrier_code: str) -> bool:
+        code = tracking_code.strip().upper()
+        carrier = carrier_code.strip().lower()
+
+        if carrier == "shopeeexpress":
+            return code.startswith("SPX") or code.startswith("SLS")
+
+        if carrier == "jtexpress":
+            return code.startswith("JT") or (code.isdigit() and 10 <= len(code) <= 15)
+
+        return True
 
     def seed_carriers(self) -> None:
         with self._session_factory() as session:
@@ -87,9 +100,18 @@ class TrackingService:
             )
         )
 
-    def _sync_tracking_history(self, session: Session, tracking: Tracking, provider: TrackingProvider) -> None:
+    def _sync_tracking_history(
+        self,
+        session: Session,
+        tracking: Tracking,
+        provider: TrackingProvider,
+        *,
+        require_history: bool = False,
+    ) -> None:
         history = provider.fetch_event_history(tracking.tracking_code)
         if not history:
+            if require_history:
+                raise InvalidTrackingCodeError(f"No provider history for tracking code: {tracking.tracking_code}")
             latest = provider.fetch_latest_event(
                 tracking_code=tracking.tracking_code,
                 current_status=TrackingStatus(tracking.last_status) if tracking.last_status else None,
@@ -128,6 +150,9 @@ class TrackingService:
             if carrier_code is None:
                 raise ValueError("error.unsupported_tracking_code")
 
+        if not self._is_valid_for_carrier(normalized_code, carrier_code):
+            raise ValueError("error.invalid_tracking_code")
+
         with self._session_factory() as session:
             user = self._get_or_create_user(session, telegram_chat_id)
             carrier = session.scalar(select(Carrier).where(Carrier.code == carrier_code))
@@ -165,7 +190,10 @@ class TrackingService:
 
             if provider is not None:
                 try:
-                    self._sync_tracking_history(session, tracking, provider)
+                    require_history = existing is None and carrier_code == "shopeeexpress"
+                    self._sync_tracking_history(session, tracking, provider, require_history=require_history)
+                except InvalidTrackingCodeError:
+                    raise ValueError("error.invalid_tracking_code")
                 except Exception:
                     logger.exception("Initial provider history sync failed for tracking '%s'", normalized_code)
 
@@ -188,6 +216,42 @@ class TrackingService:
                 .order_by(Tracking.next_check_at.asc())
             ).all()
             return list(rows)
+
+    def get_user_profile_summary(self, telegram_chat_id: int) -> dict[str, object]:
+        with self._session_factory() as session:
+            user = session.scalar(select(User).where(User.telegram_chat_id == telegram_chat_id))
+            if user is None:
+                return {
+                    "joined_at": None,
+                    "total_orders": 0,
+                    "active_orders": 0,
+                    "delivered_orders": 0,
+                    "failed_orders": 0,
+                    "carriers_used": 0,
+                }
+
+            trackings = session.scalars(
+                select(Tracking).where(Tracking.user_id == user.id)
+            ).all()
+
+            total_orders = len(trackings)
+            active_orders = sum(1 for tracking in trackings if tracking.is_active)
+            delivered_orders = sum(
+                1 for tracking in trackings if tracking.last_status == TrackingStatus.DELIVERED.value
+            )
+            failed_orders = sum(
+                1 for tracking in trackings if tracking.last_status == TrackingStatus.FAILED.value
+            )
+            carriers_used = len({tracking.carrier_id for tracking in trackings})
+
+            return {
+                "joined_at": user.created_at,
+                "total_orders": total_orders,
+                "active_orders": active_orders,
+                "delivered_orders": delivered_orders,
+                "failed_orders": failed_orders,
+                "carriers_used": carriers_used,
+            }
 
     def get_tracking_detail(self, telegram_chat_id: int, tracking_id: int) -> Tracking | None:
         with self._session_factory() as session:
