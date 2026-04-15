@@ -43,5 +43,9 @@ fi
 echo -e "${GREEN}✓ All checks passed${NC}"
 echo -e "${YELLOW}Starting bot...${NC}"
 
-# Run bot
-python3 -m bot.main
+# Run bot detached so it keeps running after the SSH session ends.
+LOG_FILE="bot.log"
+nohup python3 -m bot.main >> "$LOG_FILE" 2>&1 &
+BOT_PID=$!
+echo -e "${GREEN}✓ Bot started in background (PID: ${BOT_PID})${NC}"
+echo -e "${GREEN}✓ Logs: ${LOG_FILE}${NC}"
