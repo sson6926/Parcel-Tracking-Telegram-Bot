@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -28,6 +28,7 @@ class TrackingHandlers:
         "DELIVERED": "✅",
         "FAILED": "❌",
     }
+    _DISPLAY_TIMEZONE = timezone(timedelta(hours=7))
 
     def __init__(self, i18n: I18n, tracking_service: TrackingService) -> None:
         self._i18n = i18n
@@ -42,6 +43,12 @@ class TrackingHandlers:
     @staticmethod
     def _esc(value: object) -> str:
         return escape(str(value))
+
+    def _format_datetime_local(self, value: datetime, fmt: str) -> str:
+        dt = value
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(self._DISPLAY_TIMEZONE).strftime(fmt)
 
     def _format_labeled_item(self, text: str, *, as_code: bool = False, as_italic: bool = False) -> str:
         if ":" not in text:
@@ -232,7 +239,7 @@ class TrackingHandlers:
         summary = self._service.get_user_profile_summary(chat_id)
         joined_at = summary.get("joined_at")
         if isinstance(joined_at, datetime):
-            joined_value = joined_at.strftime("%d/%m/%Y %H:%M")
+            joined_value = self._format_datetime_local(joined_at, "%d/%m/%Y %H:%M")
         else:
             joined_value = self._i18n.t("profile_not_available", lang)
 
@@ -427,7 +434,7 @@ class TrackingHandlers:
             if latest.location:
                 text += f"📍 {self._format_labeled_item(self._i18n.t('detail_location', lang, location=latest.location[:60]), as_italic=True)}\n"
             if latest.event_time:
-                formatted_time = latest.event_time.strftime("%d/%m/%Y %H:%M") if isinstance(latest.event_time, datetime) else str(latest.event_time)
+                formatted_time = self._format_datetime_local(latest.event_time, "%d/%m/%Y %H:%M") if isinstance(latest.event_time, datetime) else str(latest.event_time)
                 text += f"🕒 {self._format_labeled_item(self._i18n.t('detail_time', lang, time=formatted_time), as_code=True)}"
 
         keyboard = InlineKeyboardMarkup(
@@ -488,7 +495,7 @@ class TrackingHandlers:
 
         for i, event in enumerate(page_events):
             event_num = start_idx + i + 1
-            formatted_time = event.event_time.strftime("%d/%m %H:%M") if isinstance(event.event_time, datetime) else str(event.event_time)
+            formatted_time = self._format_datetime_local(event.event_time, "%d/%m %H:%M") if isinstance(event.event_time, datetime) else str(event.event_time)
             status_text = self._i18n.status(event.status, lang)
             status_icon = self._status_icon(event.status)
             text += f"<b>{event_num}.</b> 🕒 <code>{self._esc(formatted_time)}</code> • {status_icon} <b>{self._esc(status_text)}</b>\n"
