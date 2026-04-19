@@ -69,6 +69,7 @@ class TrackingService:
                 if code not in existing:
                     session.add(Carrier(code=code, name=name))
             session.commit()
+            logger.info("Carriers seeded: %s", list(SUPPORTED_CARRIERS.keys()))
 
     def _get_or_create_user(self, session: Session, telegram_chat_id: int) -> User:
         user = session.scalar(select(User).where(User.telegram_chat_id == telegram_chat_id))
@@ -107,10 +108,11 @@ class TrackingService:
         provider: TrackingProvider,
         *,
         require_history: bool = False,
+        notify: bool = True,
     ) -> list[NotificationDTO]:
-        """Sync tracking history and return list of new events."""
+        """Sync tracking history and return list of NEW events (not seen before)."""
         new_events: list[NotificationDTO] = []
-        
+
         history = provider.fetch_event_history(tracking.tracking_code)
         if not history:
             if require_history:
@@ -131,27 +133,30 @@ class TrackingService:
             ).all()
         }
 
+        last_known_hash = tracking.last_event_hash
+
         for event in history:
-            if event.event_hash in existing_hashes:
-                continue
+            is_new = event.event_hash not in existing_hashes
             self._insert_event_if_new(session, tracking, event)
             existing_hashes.add(event.event_hash)
-            # Track new event for notification
-            new_events.append(
-                NotificationDTO(
-                    tracking_code=tracking.tracking_code,
-                    carrier_code=tracking.carrier.code,
-                    status=event.status,
-                    description=event.description,
-                    location=event.location,
-                    event_time=event.event_time,
+
+            # Only notify for events that appeared AFTER the last known state
+            if notify and is_new and last_known_hash is not None:
+                new_events.append(
+                    NotificationDTO(
+                        tracking_code=tracking.tracking_code,
+                        carrier_code=tracking.carrier.code,
+                        status=event.status,
+                        description=event.description,
+                        location=event.location,
+                        event_time=event.event_time,
+                    )
                 )
-            )
 
         latest_event = history[-1]
         tracking.last_status = latest_event.status.value
         tracking.last_event_hash = latest_event.event_hash
-        
+
         return new_events
 
     def add_tracking(self, telegram_chat_id: int, tracking_code: str, carrier_code_override: str | None = None) -> Tracking:
@@ -207,7 +212,7 @@ class TrackingService:
             if provider is not None:
                 try:
                     require_history = existing is None and carrier_code == "shopeeexpress"
-                    self._sync_tracking_history(session, tracking, provider, require_history=require_history)
+                    self._sync_tracking_history(session, tracking, provider, require_history=require_history, notify=False)
                 except InvalidTrackingCodeError:
                     raise ValueError("error.invalid_tracking_code")
                 except Exception:
@@ -217,6 +222,7 @@ class TrackingService:
             session.refresh(tracking)
             session.refresh(carrier)
             tracking.carrier = carrier
+            logger.info("Tracking added: user=%s code=%s carrier=%s", telegram_chat_id, normalized_code, carrier_code)
             return tracking
 
     def list_trackings(self, telegram_chat_id: int) -> list[Tracking]:
@@ -299,11 +305,13 @@ class TrackingService:
             if tracking is None:
                 return []
 
-            return session.scalars(
-                select(TrackingEvent)
-                .where(TrackingEvent.tracking_id == tracking_id)
-                .order_by(TrackingEvent.event_time.asc())
-            ).all()
+            return list(
+                session.scalars(
+                    select(TrackingEvent)
+                    .where(TrackingEvent.tracking_id == tracking_id)
+                    .order_by(TrackingEvent.event_time.asc())
+                ).all()
+            )
 
     def remove_tracking(self, telegram_chat_id: int, tracking_code: str) -> bool:
         normalized_code = tracking_code.strip().upper()
@@ -323,4 +331,5 @@ class TrackingService:
 
             tracking.is_active = False
             session.commit()
+            logger.info("Tracking removed: user=%s code=%s", telegram_chat_id, normalized_code)
             return True

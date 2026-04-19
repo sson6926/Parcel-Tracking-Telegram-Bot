@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
-"""
-Telegram Bot Main Entry Point
-Supports both Webhook and Polling modes
-"""
+"""Telegram Bot entry point. Supports polling mode."""
 
+import asyncio
 import logging
 import os
-from pathlib import Path
+import warnings
 
 from dotenv import load_dotenv
 import sentry_sdk
 from sentry_sdk.integrations.logging import LoggingIntegration
 from telegram import Update
-from telegram.ext import Application, CallbackContext
+from telegram.ext import (
+    Application,
+    CallbackContext,
+    CallbackQueryHandler,
+    CommandHandler,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+)
+from telegram.warnings import PTBUserWarning
 
 from app.bot.handlers import TrackingHandlers
 from app.core.i18n import I18n
@@ -63,21 +70,20 @@ def setup_sentry() -> None:
 
 
 async def error_handler(update: Update, context: CallbackContext) -> None:
-    """Handle errors by logging them and alerting the user if possible."""
     logger.error("Exception while handling an update:", exc_info=context.error)
     if context.error:
         sentry_sdk.capture_exception(context.error)
-    
+
     if update and update.callback_query:
         try:
             await update.callback_query.answer("An error occurred. Please try again.", show_alert=False)
         except Exception as e:
-            logger.error(f"Failed to answer callback: {e}")
+            logger.error("Failed to answer callback: %s", e)
     elif update and update.message:
         try:
             await update.message.reply_text("An error occurred. Please try again.")
         except Exception as e:
-            logger.error(f"Failed to send error message: {e}")
+            logger.error("Failed to send error message: %s", e)
 
 
 async def noop_callback(update: Update, context: CallbackContext) -> None:
@@ -86,17 +92,18 @@ async def noop_callback(update: Update, context: CallbackContext) -> None:
 
 
 def setup_logging() -> None:
-    """Setup logging configuration"""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
-    logger.info(f"Logging level set to {log_level}")
+    # Suppress noisy third-party loggers
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logger.info("Logging level set to %s", log_level)
 
 
 def main() -> None:
-    """Main entry point"""
     load_dotenv()
     setup_logging()
     setup_sentry()
@@ -126,15 +133,6 @@ def main() -> None:
 
     handlers = TrackingHandlers(i18n, tracking_service)
 
-    # Register handlers in application
-    from telegram.ext import (
-        CallbackQueryHandler,
-        CommandHandler,
-        ConversationHandler,
-        MessageHandler,
-        filters,
-    )
-
     # Command handlers
     application.add_handler(CommandHandler("start", handlers.start_command))
     application.add_handler(CommandHandler("help", handlers.help_command))
@@ -152,19 +150,23 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop"))
 
     # Conversation handler for adding tracking
-    conv_handler = ConversationHandler(
-        entry_points=[
-            CommandHandler("add", handlers.add_command),
-            CallbackQueryHandler(handlers.add_carrier_callback, pattern="^add_carrier:"),
-        ],
-        states={
-            1: [
+    # Suppress PTBUserWarning about per_message=False (expected behavior for this flow)
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=PTBUserWarning)
+        conv_handler = ConversationHandler(
+            entry_points=[
+                CommandHandler("add", handlers.add_command),
                 CallbackQueryHandler(handlers.add_carrier_callback, pattern="^add_carrier:"),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.add_tracking_message),
             ],
-        },
-        fallbacks=[CommandHandler("start", handlers.start_command)],
-    )
+            states={
+                1: [
+                    CallbackQueryHandler(handlers.add_carrier_callback, pattern="^add_carrier:"),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, handlers.add_tracking_message),
+                ],
+            },
+            fallbacks=[CommandHandler("start", handlers.start_command)],
+            per_message=False,
+        )
     application.add_handler(conv_handler)
 
     # Auto-add Shopee order when message starts with SPXVN...
@@ -175,14 +177,21 @@ def main() -> None:
         )
     )
 
-    # Add error handler
     application.add_error_handler(error_handler)
 
-    # Setup scheduler with the application instance
     scheduler = TrackingScheduler(session_factory, tracking_service, application=application)
+
+    async def post_init(app) -> None:
+        # Capture the running event loop so the background scheduler thread
+        # can dispatch send_message coroutines into it via run_coroutine_threadsafe.
+        scheduler.set_event_loop(asyncio.get_event_loop())
+        logger.info("Event loop captured for scheduler notifications")
+
+    application.post_init = post_init
+
     scheduler.start()
 
-    logger.info("Bot application started successfully")
+    logger.info("Bot started")
     try:
         application.run_polling(allowed_updates=["message", "callback_query"])
     finally:

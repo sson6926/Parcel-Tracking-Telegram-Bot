@@ -1,13 +1,16 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+"""Legacy module kept for backward compatibility with Procfile and deployment scripts.
+Use db.__init__ (create_session_factory, init_db) for new code.
+"""
+import os
 
-from db.models import Base
+from db import create_session_factory, init_db as _init_db
+from db.models import Base  # noqa: F401 – re-exported for convenience
 
-DATABASE_URL = "sqlite:///./tracking.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tracking.db")
 
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+SessionLocal = create_session_factory(DATABASE_URL)
 
 
 def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+    """Initialize database and create all tables."""
+    _init_db(DATABASE_URL)

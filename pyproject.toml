@@ -1,0 +1,28 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", ".git", "__pycache__", ".env"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N"]
+ignore = [
+    "E501",  # line too long
+    "W503",  # line break before binary operator
+]
+
+[tool.ruff.lint.isort]
+profile = "black"
+known-first-party = ["app", "bot", "db", "tracking"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = [".venv", ".git"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "--cov=. --cov-report=xml --cov-report=term-missing"

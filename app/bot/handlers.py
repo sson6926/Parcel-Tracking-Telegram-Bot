@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from html import escape
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -10,8 +10,14 @@ from telegram.error import BadRequest
 from telegram.ext import CallbackContext, ConversationHandler
 
 from app.core.i18n import I18n
+from tracking.constants import (
+    DEFAULT_STATUS_ICON,
+    DISPLAY_TIMEZONE,
+    STATUS_ICONS,
+    TIMELINE_DESCRIPTION_MAX_LEN,
+    TIMELINE_LOCATION_MAX_LEN,
+)
 from tracking.service import TrackingService
-from tracking.types import TrackingStatus
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +26,8 @@ ITEMS_PER_PAGE = 10
 
 
 class TrackingHandlers:
-    _STATUS_ICONS = {
-        "CREATED": "🆕",
-        "PICKED_UP": "📥",
-        "IN_TRANSIT": "🚚",
-        "OUT_FOR_DELIVERY": "🛵",
-        "DELIVERED": "✅",
-        "FAILED": "❌",
-    }
-    _DISPLAY_TIMEZONE = timezone(timedelta(hours=7))
+    _STATUS_ICONS = STATUS_ICONS
+    _DISPLAY_TIMEZONE = DISPLAY_TIMEZONE
 
     def __init__(self, i18n: I18n, tracking_service: TrackingService) -> None:
         self._i18n = i18n
@@ -68,7 +67,45 @@ class TrackingHandlers:
         return f"<b>{escaped_label}:</b> {rendered_value}"
 
     def _status_icon(self, status_code: str) -> str:
-        return self._STATUS_ICONS.get(status_code, "📦")
+        return self._STATUS_ICONS.get(status_code, DEFAULT_STATUS_ICON)
+
+    @staticmethod
+    async def _delete_message_quietly(message) -> None:
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+    def _clear_add_tracking_context(self, context: CallbackContext) -> None:
+        context.user_data.pop("add_waiting_carrier", None)
+        context.user_data.pop("add_waiting_chat_id", None)
+
+    def _build_add_tracking_result_text(
+        self,
+        chat_id: int,
+        lang: str,
+        tracking_code: str,
+        carrier_code: str | None,
+    ) -> str:
+        try:
+            tracking = self._service.add_tracking(chat_id, tracking_code, carrier_code)
+            status_text = self._i18n.status(tracking.last_status, lang)
+            raw_text = self._i18n.t(
+                "add_success",
+                lang,
+                code=tracking.tracking_code,
+                carrier=tracking.carrier.name,
+                status=status_text,
+            )
+            return f"<b>{self._esc(raw_text)}</b>"
+        except ValueError as e:
+            error_key = str(e)
+            msg = (
+                self._i18n.t(error_key, lang)
+                if self._i18n.has_key(error_key, lang)
+                else self._i18n.t("error_add_tracking_generic", lang)
+            )
+            return f"<b>{self._esc(msg)}</b>"
 
     @staticmethod
     def _split_tracking_code_for_buttons(tracking_code: str) -> tuple[str, str, str]:
@@ -280,23 +317,23 @@ class TrackingHandlers:
 
         await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
 
+    def _build_language_buttons(self, lang: str) -> list[InlineKeyboardButton]:
+        return [
+            InlineKeyboardButton(
+                self._i18n.language_name(lang_code, lang),
+                callback_data=f"lang:set:{lang_code}",
+            )
+            for lang_code in self._i18n.supported_languages()
+        ]
+
     async def _send_help_language(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
         text = f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
         text += f"<i>{self._esc(self._i18n.t('available_languages', lang))}</i>\n"
         for lang_code in self._i18n.supported_languages():
             text += f"🌍 {self._esc(self._i18n.language_name(lang_code, lang))}\n"
 
-        buttons = []
-        for lang_code in self._i18n.supported_languages():
-            buttons.append(
-                InlineKeyboardButton(
-                    self._i18n.language_name(lang_code, lang),
-                    callback_data=f"lang:set:{lang_code}",
-                )
-            )
-
         keyboard = InlineKeyboardMarkup(
-            [buttons, [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")]]
+            [self._build_language_buttons(lang), [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")]]
         )
 
         await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
@@ -330,17 +367,8 @@ class TrackingHandlers:
             text = f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>\n\n"
             text += f"<i>{self._esc(self._i18n.t('available_languages', lang))}</i>"
 
-            buttons = []
-            for lang_code in self._i18n.supported_languages():
-                buttons.append(
-                    InlineKeyboardButton(
-                        self._i18n.language_name(lang_code, lang),
-                        callback_data=f"lang:set:{lang_code}",
-                    )
-                )
-
             keyboard = InlineKeyboardMarkup(
-                [buttons, [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")]]
+                [self._build_language_buttons(lang), [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")]]
             )
 
             await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
@@ -366,14 +394,12 @@ class TrackingHandlers:
         data = query.data
 
         if data == "cmd:list":
-            context.user_data.pop("add_waiting_carrier", None)
-            context.user_data.pop("add_waiting_chat_id", None)
+            self._clear_add_tracking_context(context)
             await self._show_order_list(chat_id, update, context, lang)
         elif data == "cmd:add":
             await self._show_add_carrier_selection(chat_id, update, context, lang)
         elif data == "cmd:menu":
-            context.user_data.pop("add_waiting_carrier", None)
-            context.user_data.pop("add_waiting_chat_id", None)
+            self._clear_add_tracking_context(context)
             await self._show_main_menu(chat_id, update, context, lang)
 
     async def _show_order_list(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
@@ -432,7 +458,7 @@ class TrackingHandlers:
         if events:
             latest = events[-1]
             if latest.location:
-                text += f"📍 {self._format_labeled_item(self._i18n.t('detail_location', lang, location=latest.location[:60]), as_italic=True)}\n"
+                text += f"📍 {self._format_labeled_item(self._i18n.t('detail_location', lang, location=latest.location[:TIMELINE_LOCATION_MAX_LEN]), as_italic=True)}\n"
             if latest.event_time:
                 formatted_time = self._format_datetime_local(latest.event_time, "%d/%m/%Y %H:%M") if isinstance(latest.event_time, datetime) else str(latest.event_time)
                 text += f"🕒 {self._format_labeled_item(self._i18n.t('detail_time', lang, time=formatted_time), as_code=True)}"
@@ -500,9 +526,9 @@ class TrackingHandlers:
             status_icon = self._status_icon(event.status)
             text += f"<b>{event_num}.</b> 🕒 <code>{self._esc(formatted_time)}</code> • {status_icon} <b>{self._esc(status_text)}</b>\n"
             if event.location:
-                text += f"📍 <i>{self._esc(event.location[:60])}</i>\n"
+                text += f"📍 <i>{self._esc(event.location[:TIMELINE_LOCATION_MAX_LEN])}</i>\n"
             if event.description:
-                text += f"↳ {self._esc(event.description[:90])}\n"
+                text += f"↳ {self._esc(event.description[:TIMELINE_DESCRIPTION_MAX_LEN])}\n"
             text += "\n"
 
         buttons = []
@@ -575,34 +601,18 @@ class TrackingHandlers:
         if context.user_data.get("add_waiting_carrier") is None:
             return ConversationHandler.END
 
+        if update.message is None:
+            return ConversationHandler.END
+
         chat_id = update.effective_chat.id
         lang = self._get_user_lang(context)
         tracking_code = update.message.text.strip()
         carrier = context.user_data.get("add_waiting_carrier")
 
-        try:
-            tracking = self._service.add_tracking(chat_id, tracking_code, carrier)
-            status_text = self._i18n.status(tracking.last_status, lang)
-            raw_text = self._i18n.t(
-                "add_success",
-                lang,
-                code=tracking.tracking_code,
-                carrier=tracking.carrier.name,
-                status=status_text,
-            )
-            text = f"<b>{self._esc(raw_text)}</b>"
-        except ValueError as e:
-            error_key = str(e)
-            msg = self._i18n.t(error_key, lang) if self._i18n.has_key(error_key, lang) else self._i18n.t("error_add_tracking_generic", lang)
-            text = f"<b>{self._esc(msg)}</b>"
+        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
 
-        context.user_data.pop("add_waiting_carrier", None)
-        context.user_data.pop("add_waiting_chat_id", None)
-
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
+        self._clear_add_tracking_context(context)
+        await self._delete_message_quietly(update.message)
         await context.bot.send_message(
             chat_id=chat_id,
             text=text,
@@ -629,26 +639,8 @@ class TrackingHandlers:
         lang = self._get_user_lang(context)
         tracking_code = match.group(1).upper()
 
-        try:
-            tracking = self._service.add_tracking(chat_id, tracking_code, "shopeeexpress")
-            status_text = self._i18n.status(tracking.last_status, lang)
-            raw_success = self._i18n.t(
-                "add_success",
-                lang,
-                code=tracking.tracking_code,
-                carrier=tracking.carrier.name,
-                status=status_text,
-            )
-            text = f"<b>{self._esc(raw_success)}</b>"
-        except ValueError as e:
-            error_key = str(e)
-            msg = self._i18n.t(error_key, lang) if self._i18n.has_key(error_key, lang) else self._i18n.t("error_add_tracking_generic", lang)
-            text = f"<b>{self._esc(msg)}</b>"
-
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
+        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, "shopeeexpress")
+        await self._delete_message_quietly(update.message)
 
         await context.bot.send_message(
             chat_id=chat_id,
@@ -678,10 +670,8 @@ class TrackingHandlers:
         chat_id = update.effective_chat.id
         lang = self._get_user_lang(context)
 
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
+        if update.message is not None:
+            await self._delete_message_quietly(update.message)
         await self._show_add_carrier_selection(chat_id, update, context, lang)
 
         return WAITING_FOR_TRACKING_CODE
@@ -690,10 +680,8 @@ class TrackingHandlers:
         chat_id = update.effective_chat.id
         lang = self._get_user_lang(context)
 
-        try:
-            await update.message.delete()
-        except Exception:
-            pass
+        if update.message is not None:
+            await self._delete_message_quietly(update.message)
         await self._show_order_list(chat_id, update, context, lang)
 
     async def remove_command(self, update: Update, context: CallbackContext) -> None:
@@ -731,16 +719,7 @@ class TrackingHandlers:
         chat_id = update.effective_chat.id
         lang = self._get_user_lang(context)
 
-        buttons = []
-        for lang_code in self._i18n.supported_languages():
-            buttons.append(
-                InlineKeyboardButton(
-                    self._i18n.language_name(lang_code, lang),
-                    callback_data=f"lang:set:{lang_code}",
-                )
-            )
-
-        keyboard = InlineKeyboardMarkup([buttons])
+        keyboard = InlineKeyboardMarkup([self._build_language_buttons(lang)])
 
         await update.message.reply_text(
             f"<b>{self._esc(self._i18n.t('help_language', lang))}</b>",

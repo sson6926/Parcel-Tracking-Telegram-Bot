@@ -1,0 +1,18 @@
+from datetime import timedelta, timezone
+
+DISPLAY_TIMEZONE = timezone(timedelta(hours=7))
+
+STATUS_ICONS = {
+    "CREATED": "🆕",
+    "PICKED_UP": "📥",
+    "IN_TRANSIT": "🚚",
+    "OUT_FOR_DELIVERY": "🛵",
+    "DELIVERED": "✅",
+    "FAILED": "❌",
+}
+
+DEFAULT_STATUS_ICON = "📦"
+NOTIFICATION_TIMEOUT_SECONDS = 5
+TRACKING_CHECK_INTERVAL_MINUTES = 5
+TIMELINE_LOCATION_MAX_LEN = 60
+TIMELINE_DESCRIPTION_MAX_LEN = 90

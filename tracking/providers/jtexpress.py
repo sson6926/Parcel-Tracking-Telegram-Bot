@@ -11,6 +11,14 @@ from tracking.types import TrackingEventDTO, TrackingStatus
 
 logger = logging.getLogger(__name__)
 
+_FLOW: list[tuple[TrackingStatus, str]] = [
+    (TrackingStatus.CREATED, "Đã tiếp nhận vận đơn"),
+    (TrackingStatus.PICKED_UP, "Đã lấy hàng"),
+    (TrackingStatus.IN_TRANSIT, "Đang vận chuyển"),
+    (TrackingStatus.OUT_FOR_DELIVERY, "Đang giao hàng"),
+    (TrackingStatus.DELIVERED, "Đã giao thành công"),
+]
+
 
 class JTExpressProvider(TrackingProvider):
     carrier_code = "jtexpress"
@@ -27,28 +35,25 @@ class JTExpressProvider(TrackingProvider):
             return history[-1]
 
         status = TrackingStatus.IN_TRANSIT
-        description = "JT Express: Van don dang theo doi"
+        description = "JT Express: Vận đơn đang theo dõi"
         location = ""
         event_time = datetime.now(timezone.utc)
         event_hash = compute_event_hash(tracking_code, status, description, location, event_time.isoformat())
-        return TrackingEventDTO(status=status, description=description, location=location, event_time=event_time, event_hash=event_hash)
+        return TrackingEventDTO(
+            status=status,
+            description=description,
+            location=location,
+            event_time=event_time,
+            event_hash=event_hash,
+        )
 
     def fetch_event_history(self, tracking_code: str) -> list[TrackingEventDTO]:
-        status = self._detect_status_from_html(tracking_code)
-
-        flow = [
-            (TrackingStatus.CREATED, "Da tiep nhan van don"),
-            (TrackingStatus.PICKED_UP, "Da lay hang"),
-            (TrackingStatus.IN_TRANSIT, "Dang van chuyen"),
-            (TrackingStatus.OUT_FOR_DELIVERY, "Dang giao hang"),
-            (TrackingStatus.DELIVERED, "Da giao thanh cong"),
-        ]
-
+        detected_status = self._detect_status_from_html(tracking_code)
         now = datetime.now(timezone.utc)
         events: list[TrackingEventDTO] = []
 
-        for idx, (flow_status, flow_desc) in enumerate(flow):
-            event_time = now - timedelta(hours=len(flow) - idx)
+        for idx, (flow_status, flow_desc) in enumerate(_FLOW):
+            event_time = now - timedelta(hours=len(_FLOW) - idx)
             event_hash = compute_event_hash(tracking_code, flow_status, flow_desc, "", event_time.isoformat())
             events.append(
                 TrackingEventDTO(
@@ -60,16 +65,15 @@ class JTExpressProvider(TrackingProvider):
                 )
             )
 
-        if status != TrackingStatus.IN_TRANSIT:
-            latest_event = events[-1]
-            if latest_event.status != status:
-                events[-1] = TrackingEventDTO(
-                    status=status,
-                    description="Ve trang thai van don",
-                    location=latest_event.location,
-                    event_time=now,
-                    event_hash=compute_event_hash(tracking_code, status, "Ve trang thai van don", "", now.isoformat()),
-                )
+        if detected_status != TrackingStatus.IN_TRANSIT and events[-1].status != detected_status:
+            description = "Cập nhật trạng thái vận đơn"
+            events[-1] = TrackingEventDTO(
+                status=detected_status,
+                description=description,
+                location="",
+                event_time=now,
+                event_hash=compute_event_hash(tracking_code, detected_status, description, "", now.isoformat()),
+            )
 
         return events
 
@@ -77,13 +81,9 @@ class JTExpressProvider(TrackingProvider):
         try:
             started_at = perf_counter()
             logger.debug("JT page request start: tracking_code=%s", tracking_code)
-            headers = {
-                "user-agent": "Mozilla/5.0",
-            }
             with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.get(self._tracking_url, headers=headers)
+                response = client.get(self._tracking_url, headers={"user-agent": "Mozilla/5.0"})
             elapsed_ms = int((perf_counter() - started_at) * 1000)
-
             logger.debug(
                 "JT page response: tracking_code=%s status=%s elapsed_ms=%s",
                 tracking_code,
