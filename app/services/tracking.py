@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_CARRIERS = {
     "jtexpress": "JT Express",
     "shopeeexpress": "Shopee Express",
+    "ghn": "Giao Hàng Nhanh",
 }
 
 
@@ -33,23 +34,49 @@ class TrackingService:
 
     @staticmethod
     def detect_carrier(tracking_code: str) -> str | None:
+        """
+        Auto-detect carrier from tracking code.
+        
+        Patterns:
+        - Shopee: SPX*/SLS* (starts with SPX or SLS)
+        - JT Express: JT* or pure digits (10-15 chars)
+        - GHN: 8 uppercase alphanumeric chars (e.g., GYKEQFDX, GYWFRP6T)
+        """
         code = tracking_code.strip().upper()
+        
+        # Shopee Express
         if code.startswith(("SPX", "SLS")):
             return "shopeeexpress"
+        
+        # JT Express
         if code.startswith("JT"):
             return "jtexpress"
         if code.isdigit() and 10 <= len(code) <= 15:
             return "jtexpress"
+        
+        # GHN: Exactly 8 alphanumeric chars (letters or mix of letters+digits)
+        # Must have at least one letter to avoid pure digit codes
+        if len(code) == 8 and code.isalnum() and any(c.isalpha() for c in code):
+            return "ghn"
+        
         return None
 
     @staticmethod
     def _is_valid_for_carrier(tracking_code: str, carrier_code: str) -> bool:
+        """Validate tracking code format for specific carrier."""
         code = tracking_code.strip().upper()
         carrier = carrier_code.strip().lower()
+        
         if carrier == "shopeeexpress":
             return code.startswith(("SPX", "SLS"))
+        
         if carrier == "jtexpress":
             return code.startswith("JT") or (code.isdigit() and 10 <= len(code) <= 15)
+        
+        if carrier == "ghn":
+            # GHN: Exactly 8 alphanumeric chars with at least one letter
+            return len(code) == 8 and code.isalnum() and any(c.isalpha() for c in code)
+        
         return True
 
     def seed_carriers(self) -> None:

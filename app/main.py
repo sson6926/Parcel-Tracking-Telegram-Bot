@@ -109,10 +109,11 @@ def main() -> None:
         )
     application.add_handler(conv_handler)
 
+    # Auto-add tracking from message (for all carriers)
     application.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND & filters.Regex(r"(?i)^\s*SPXVN"),
-            tracking_handler.auto_add_shopee_from_message,
+            filters.TEXT & ~filters.COMMAND,
+            tracking_handler.auto_add_from_message,
         )
     )
 
