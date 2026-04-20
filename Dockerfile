@@ -16,4 +16,4 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
-CMD ["python", "-m", "bot.main"]
+CMD ["python", "-m", "app.main"]

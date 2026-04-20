@@ -1,0 +1,390 @@
+"""Tracking operations handlers."""
+from __future__ import annotations
+
+import logging
+import re
+from datetime import datetime
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import CallbackContext, ConversationHandler
+
+from app.constants.icons import TIMELINE_DESCRIPTION_MAX_LEN, TIMELINE_LOCATION_MAX_LEN
+from app.constants.user_state import ADD_WAITING_CARRIER, ADD_WAITING_CHAT_ID, WAITING_FOR_TRACKING_CODE
+from app.handlers.base_handler import BaseHandler
+from app.utils import formatter
+
+logger = logging.getLogger(__name__)
+
+ITEMS_PER_PAGE = 10
+
+
+class TrackingHandler(BaseHandler):
+    """Handler for tracking operations (add, list, remove, detail, timeline)."""
+
+    def _clear_add_tracking_context(self, context: CallbackContext) -> None:
+        context.user_data.pop(ADD_WAITING_CARRIER, None)
+        context.user_data.pop(ADD_WAITING_CHAT_ID, None)
+
+    def _build_add_tracking_result_text(
+        self,
+        chat_id: int,
+        lang: str,
+        tracking_code: str,
+        carrier_code: str | None,
+    ) -> str:
+        try:
+            tracking = self._service.add_tracking(chat_id, tracking_code, carrier_code)
+            status_text = self._i18n.status(tracking.last_status, lang)
+            raw_text = self._i18n.t(
+                "add_success",
+                lang,
+                code=tracking.tracking_code,
+                carrier=tracking.carrier.name,
+                status=status_text,
+            )
+            return f"<b>{formatter.esc(raw_text)}</b>"
+        except ValueError as e:
+            error_key = str(e)
+            msg = (
+                self._i18n.t(error_key, lang)
+                if self._i18n.has_key(error_key, lang)
+                else self._i18n.t("error_add_tracking_generic", lang)
+            )
+            return f"<b>{formatter.esc(msg)}</b>"
+
+    async def cmd_callback(self, update: Update, context: CallbackContext) -> None:
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        data = query.data
+
+        if data == "cmd:list":
+            self._clear_add_tracking_context(context)
+            await self._show_order_list(chat_id, update, context, lang)
+        elif data == "cmd:add":
+            await self._show_add_carrier_selection(chat_id, update, context, lang)
+        elif data == "cmd:menu":
+            self._clear_add_tracking_context(context)
+            await self._send_or_edit(
+                update=update,
+                context=context,
+                chat_id=chat_id,
+                text=f"<b>{formatter.esc(self._i18n.t('help_intro', lang))}</b>",
+                reply_markup=self._build_main_keyboard(lang),
+                parse_mode="HTML",
+            )
+
+    async def list_command(self, update: Update, context: CallbackContext) -> None:
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+
+        if update.message is not None:
+            await self._delete_message_quietly(update.message)
+        await self._show_order_list(chat_id, update, context, lang)
+
+    async def _show_order_list(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
+        trackings = self._service.list_trackings(chat_id)
+
+        if not trackings:
+            text = f"<b>{formatter.esc(self._i18n.t('list_empty', lang))}</b>"
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")]]
+            )
+            await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
+            return
+
+        text = f"<b>{formatter.esc(self._i18n.t('list_header', lang))}</b>\n\n"
+        text += f"<i>{formatter.esc(self._i18n.t('tap_order_hint', lang))}</i>"
+        buttons = []
+        for tracking in trackings:
+            status_icon = formatter.status_icon(tracking.last_status)
+            code_1, code_2, code_3 = formatter.split_tracking_code_for_buttons(tracking.tracking_code)
+            buttons.append(
+                [
+                    InlineKeyboardButton(status_icon, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton(code_1, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton(code_2, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton(code_3, callback_data=f"order:{tracking.id}"),
+                    InlineKeyboardButton("🗑️", callback_data=f"remove:{tracking.id}"),
+                ]
+            )
+
+        buttons.append([InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")])
+        keyboard = InlineKeyboardMarkup(buttons)
+
+        await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
+
+    async def order_callback(self, update: Update, context: CallbackContext) -> None:
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        data = query.data
+        tracking_id = int(data.split(":")[-1])
+
+        tracking = self._service.get_tracking_detail(chat_id, tracking_id)
+        if tracking is None:
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
+            return
+
+        text = f"<b>{formatter.esc(self._i18n.t('help_order_detail', lang))}</b>\n\n"
+        text += f"🔖 {formatter.format_labeled_item(self._i18n.t('detail_code', lang, code=tracking.tracking_code), as_code=True)}\n"
+        text += f"🚚 {formatter.format_labeled_item(self._i18n.t('detail_carrier', lang, carrier=tracking.carrier.name))}\n"
+        status_icon = formatter.status_icon(tracking.last_status)
+        text += f"{status_icon} {formatter.format_labeled_item(self._i18n.t('detail_status', lang, status=self._i18n.status(tracking.last_status, lang)))}\n"
+
+        events = self._service.get_tracking_events(chat_id, tracking_id)
+        if events:
+            latest = events[-1]
+            if latest.location:
+                text += f"📍 {formatter.format_labeled_item(self._i18n.t('detail_location', lang, location=latest.location[:TIMELINE_LOCATION_MAX_LEN]), as_italic=True)}\n"
+            if latest.event_time:
+                formatted_time = formatter.format_datetime_local(latest.event_time, "%d/%m/%Y %H:%M") if isinstance(latest.event_time, datetime) else str(latest.event_time)
+                text += f"🕒 {formatter.format_labeled_item(self._i18n.t('detail_time', lang, time=formatted_time), as_code=True)}"
+
+        keyboard = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_timeline", lang),
+                        callback_data=f"order_timeline:{tracking_id}:0",
+                    ),
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_remove", lang),
+                        callback_data=f"remove:{tracking_id}",
+                    ),
+                ],
+                [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:list")],
+            ]
+        )
+
+        await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
+
+    async def order_timeline_callback(self, update: Update, context: CallbackContext) -> None:
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        parts = query.data.split(":")
+        tracking_id = int(parts[1])
+        page = int(parts[2])
+
+        tracking = self._service.get_tracking_detail(chat_id, tracking_id)
+        if tracking is None:
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
+            return
+
+        events = self._service.get_tracking_events(chat_id, tracking_id)
+        total_pages = (len(events) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+        if total_pages == 0:
+            total_pages = 1
+
+        if page < 0:
+            page = 0
+        if page >= total_pages:
+            page = total_pages - 1
+
+        start_idx = page * ITEMS_PER_PAGE
+        end_idx = start_idx + ITEMS_PER_PAGE
+        page_events = events[start_idx:end_idx]
+
+        text = (
+            f"<b>{formatter.esc(self._i18n.t('help_timeline_title', lang))}</b>\n"
+            f"📦 <code>{formatter.esc(tracking.tracking_code)}</code>\n"
+            f"🚚 {formatter.esc(tracking.carrier.name)}\n\n"
+        )
+
+        if not page_events:
+            text += f"<i>{formatter.esc(self._i18n.t('timeline_empty', lang))}</i>\n\n"
+
+        for i, event in enumerate(page_events):
+            event_num = start_idx + i + 1
+            formatted_time = formatter.format_datetime_local(event.event_time, "%d/%m %H:%M") if isinstance(event.event_time, datetime) else str(event.event_time)
+            status_text = self._i18n.status(event.status, lang)
+            status_icon = formatter.status_icon(event.status)
+            text += f"<b>{event_num}.</b> 🕒 <code>{formatter.esc(formatted_time)}</code> • {status_icon} <b>{formatter.esc(status_text)}</b>\n"
+            if event.location:
+                text += f"📍 <i>{formatter.esc(event.location[:TIMELINE_LOCATION_MAX_LEN])}</i>\n"
+            if event.description:
+                text += f"↳ {formatter.esc(event.description[:TIMELINE_DESCRIPTION_MAX_LEN])}\n"
+            text += "\n"
+
+        buttons = []
+        prev_page = total_pages - 1 if page == 0 else page - 1
+        next_page = 0 if page == total_pages - 1 else page + 1
+        nav_buttons = [
+            InlineKeyboardButton(
+                self._i18n.t("btn_prev", lang),
+                callback_data=f"order_timeline:{tracking_id}:{prev_page}",
+            ),
+            InlineKeyboardButton(
+                f"[{page + 1}/{total_pages}]",
+                callback_data="noop",
+            ),
+            InlineKeyboardButton(
+                self._i18n.t("btn_next", lang),
+                callback_data=f"order_timeline:{tracking_id}:{next_page}",
+            ),
+        ]
+
+        buttons.append(nav_buttons)
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    self._i18n.t("btn_back", lang),
+                    callback_data=f"order:{tracking_id}",
+                )
+            ]
+        )
+
+        keyboard = InlineKeyboardMarkup(buttons)
+        await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
+
+    async def add_command(self, update: Update, context: CallbackContext) -> int:
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+
+        if update.message is not None:
+            await self._delete_message_quietly(update.message)
+        await self._show_add_carrier_selection(chat_id, update, context, lang)
+
+        return WAITING_FOR_TRACKING_CODE
+
+    async def _show_add_carrier_selection(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
+        text = f"<b>{formatter.esc(self._i18n.t('add_select_carrier', lang))}</b>"
+
+        buttons = []
+        for carrier_code, carrier_name in [("jtexpress", "JT Express"), ("shopeeexpress", "Shopee Express")]:
+            buttons.append([InlineKeyboardButton(carrier_name, callback_data=f"add_carrier:{carrier_code}")])
+        buttons.append([InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")])
+
+        keyboard = InlineKeyboardMarkup(buttons)
+        await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
+
+    async def add_carrier_callback(self, update: Update, context: CallbackContext) -> int:
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        carrier = query.data.split(":")[-1]
+
+        context.user_data[ADD_WAITING_CARRIER] = carrier
+        context.user_data[ADD_WAITING_CHAT_ID] = chat_id
+
+        text = self._i18n.t("add_enter_code", lang)
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:add")]]
+        )
+
+        await self._safe_edit_message_text(
+            query,
+            f"<b>{formatter.esc(text)}</b>\n\n🔎 <i>{formatter.esc(self._i18n.t('example_label', lang))}:</i> <code>SPXVN123456789</code>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return WAITING_FOR_TRACKING_CODE
+
+    async def add_tracking_message(self, update: Update, context: CallbackContext) -> int:
+        if context.user_data.get(ADD_WAITING_CARRIER) is None:
+            return ConversationHandler.END
+
+        if update.message is None:
+            return ConversationHandler.END
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        tracking_code = update.message.text.strip()
+        carrier = context.user_data.get(ADD_WAITING_CARRIER)
+
+        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
+
+        self._clear_add_tracking_context(context)
+        await self._delete_message_quietly(update.message)
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=self._build_main_keyboard(lang),
+            parse_mode="HTML",
+        )
+
+        return ConversationHandler.END
+
+    async def auto_add_shopee_from_message(self, update: Update, context: CallbackContext) -> None:
+        if update.message is None:
+            return
+
+        # If user is in interactive add flow, keep current behavior unchanged.
+        if context.user_data.get(ADD_WAITING_CARRIER) is not None:
+            return
+
+        raw_text = update.message.text or ""
+        match = re.match(r"^\s*(SPXVN[0-9A-Z]+)", raw_text, flags=re.IGNORECASE)
+        if not match:
+            return
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        tracking_code = match.group(1).upper()
+
+        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, "shopeeexpress")
+        await self._delete_message_quietly(update.message)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=self._build_main_keyboard(lang),
+            parse_mode="HTML",
+        )
+
+    async def remove_command(self, update: Update, context: CallbackContext) -> None:
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+
+        trackings = self._service.list_trackings(chat_id)
+
+        if not trackings:
+            text = f"<b>{formatter.esc(self._i18n.t('list_empty', lang))}</b>"
+            await update.message.reply_text(text, parse_mode="HTML")
+            return
+
+        buttons = []
+        for tracking in trackings:
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        tracking.tracking_code,
+                        callback_data=f"remove:{tracking.id}",
+                    )
+                ]
+            )
+
+        keyboard = InlineKeyboardMarkup(buttons)
+        await update.message.delete()
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"<b>{formatter.esc(self._i18n.t('remove_select_prompt', lang))}</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
+    async def remove_callback(self, update: Update, context: CallbackContext) -> None:
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        tracking_id = int(query.data.split(":")[-1])
+
+        tracking = self._service.get_tracking_detail(chat_id, tracking_id)
+        if tracking is None:
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
+            return
+
+        self._service.remove_tracking(chat_id, tracking.tracking_code)
+        await query.answer(self._i18n.t("remove_success", lang, code=tracking.tracking_code), show_alert=False)
+        await self._show_order_list(chat_id, update, context, lang)
