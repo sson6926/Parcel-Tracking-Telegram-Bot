@@ -258,7 +258,11 @@ class TrackingHandler(BaseHandler):
         text = f"<b>{formatter.esc(self._i18n.t('add_select_carrier', lang))}</b>"
 
         buttons = []
-        for carrier_code, carrier_name in [("jtexpress", "JT Express"), ("shopeeexpress", "Shopee Express")]:
+        for carrier_code, carrier_name in [
+            ("jtexpress", "JT Express"),
+            ("shopeeexpress", "Shopee Express"),
+            ("ghn", "Giao Hàng Nhanh"),
+        ]:
             buttons.append([InlineKeyboardButton(carrier_name, callback_data=f"add_carrier:{carrier_code}")])
         buttons.append([InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")])
 
@@ -315,6 +319,7 @@ class TrackingHandler(BaseHandler):
         return ConversationHandler.END
 
     async def auto_add_shopee_from_message(self, update: Update, context: CallbackContext) -> None:
+        """Auto-add tracking when user sends Shopee tracking code."""
         if update.message is None:
             return
 
@@ -332,6 +337,40 @@ class TrackingHandler(BaseHandler):
         tracking_code = match.group(1).upper()
 
         text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, "shopeeexpress")
+        await self._delete_message_quietly(update.message)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            reply_markup=self._build_main_keyboard(lang),
+            parse_mode="HTML",
+        )
+
+    async def auto_add_from_message(self, update: Update, context: CallbackContext) -> None:
+        """Auto-add tracking when user sends any valid tracking code."""
+        if update.message is None:
+            return
+
+        # If user is in interactive add flow, skip auto-add
+        if context.user_data.get(ADD_WAITING_CARRIER) is not None:
+            return
+
+        raw_text = (update.message.text or "").strip()
+        if not raw_text or len(raw_text) > 20:  # Reasonable length check
+            return
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+
+        # Try to detect carrier
+        from app.services.tracking import TrackingService
+        carrier = TrackingService.detect_carrier(raw_text)
+        
+        if not carrier:
+            return  # Not a recognized tracking code
+
+        tracking_code = raw_text.upper()
+        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
         await self._delete_message_quietly(update.message)
 
         await context.bot.send_message(
