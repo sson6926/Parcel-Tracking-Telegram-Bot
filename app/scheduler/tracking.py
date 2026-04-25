@@ -75,7 +75,7 @@ class TrackingScheduler:
 
                 try:
                     new_events = self._service._sync_tracking_history(session, tracking, provider)
-                    tracking.next_check_at = now + timedelta(minutes=TRACKING_CHECK_INTERVAL_MINUTES)
+                    tracking.next_check_at = now  # reset to now so next scheduler tick will pick it up
                     session.commit()
 
                     if new_events and self._application:

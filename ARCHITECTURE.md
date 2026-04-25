@@ -170,19 +170,121 @@ User Response (Telegram)
 ```
 
 ### Background Scheduler Flow
+
+```mermaid
+sequenceDiagram
+    participant APScheduler
+    participant TrackingScheduler
+    participant Database
+    participant TrackingService
+    participant Provider
+    participant TelegramBot
+    participant User
+
+    Note over APScheduler: Every 5 minutes
+    APScheduler->>TrackingScheduler: trigger _check_updates()
+    
+    TrackingScheduler->>Database: Query active trackings<br/>(next_check_at <= now)
+    Database-->>TrackingScheduler: List of trackings
+    
+    loop For each tracking
+        TrackingScheduler->>TrackingService: _sync_tracking_history(tracking)
+        
+        TrackingService->>Provider: fetch_event_history(tracking_code)
+        Provider->>Provider: HTTP request to carrier API
+        Provider->>Provider: Parse response
+        Provider-->>TrackingService: List of events
+        
+        TrackingService->>Database: Query existing event hashes
+        Database-->>TrackingService: Set of hashes
+        
+        TrackingService->>TrackingService: Compare with last_event_hash<br/>to find NEW events
+        
+        alt Has new events
+            TrackingService->>Database: Insert new events
+            TrackingService->>Database: Update tracking.last_event_hash
+            TrackingService->>Database: Update tracking.next_check_at
+            TrackingService-->>TrackingScheduler: Return new_events[]
+            
+            loop For each new event
+                TrackingScheduler->>TrackingScheduler: Format notification message
+                TrackingScheduler->>TelegramBot: send_message(chat_id, message)
+                TelegramBot->>User: 🔔 Notification
+            end
+        else No new events
+            TrackingService->>Database: Update tracking.next_check_at
+            TrackingService-->>TrackingScheduler: Return []
+        end
+    end
+    
+    TrackingScheduler->>APScheduler: Complete
+    Note over APScheduler: Wait 5 minutes...
 ```
-APScheduler (every 5 minutes)
-    ↓
-TrackingScheduler._check_updates()
-    ↓
-Service._sync_tracking_history()
-    ↓
-Provider.fetch_event_history()
-    ↓
-Service (detect new events)
-    ↓
-Telegram Bot (send notifications)
+
+### Scheduler Implementation Details
+
+**1. Trigger Mechanism:**
+```python
+# app/scheduler/tracking.py
+scheduler.add_job(
+    self._check_updates,
+    "interval",
+    minutes=TRACKING_CHECK_INTERVAL_MINUTES,  # Default: 5
+    id="tracking_check_updates",
+    replace_existing=True,
+)
 ```
+
+**2. Query Optimization:**
+```python
+# Only check trackings that are due
+trackings = session.scalars(
+    select(Tracking)
+    .where(
+        Tracking.is_active.is_(True),
+        (Tracking.next_check_at.is_(None)) | (Tracking.next_check_at <= now),
+    )
+).all()
+```
+
+**3. Notification Logic:**
+```python
+# Only notify for events AFTER last_known_hash
+found_last_known = False
+for event in history:
+    if event.event_hash == last_known_hash:
+        found_last_known = True
+        continue
+    
+    # Only notify NEW events AFTER last known
+    if notify and is_new and (last_known_hash is None or found_last_known):
+        new_events.append(event)
+```
+
+**4. Event Loop Integration:**
+```python
+# Capture event loop in post_init callback
+async def post_init(app):
+    scheduler.set_event_loop(asyncio.get_event_loop())
+
+# Send notifications using captured loop
+future = asyncio.run_coroutine_threadsafe(
+    bot.send_message(chat_id, message), 
+    event_loop
+)
+```
+
+**5. Error Handling:**
+- Each tracking is processed independently
+- Errors in one tracking don't affect others
+- Failed API calls are logged but don't stop scheduler
+- Next check time is always updated (even on error)
+
+**6. Performance Considerations:**
+- Database query uses indexes on `is_active` and `next_check_at`
+- Event hash comparison prevents duplicate notifications
+- Batch processing: all trackings checked in single scheduler tick
+- Timeout protection: notification sending has 30s timeout
 
 ## Key Design Decisions
 

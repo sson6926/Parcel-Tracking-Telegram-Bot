@@ -22,6 +22,23 @@ Bot Telegram theo dõi trạng thái đơn hàng từ nhiều đơn vị vận c
 
 ## 🚀 Chạy với Docker
 
+### Từ Docker Hub / GHCR
+
+```bash
+# Pull image từ GitHub Container Registry
+docker pull ghcr.io/sson6926/parcel-tracking-telegram-bot:latest
+
+# Hoặc dùng docker-compose
+version: '3.8'
+services:
+  bot:
+    image: ghcr.io/sson6926/parcel-tracking-telegram-bot:latest
+    env_file: .env
+    restart: unless-stopped
+```
+
+### Build từ source
+
 ```bash
 # 1. Clone repository
 git clone https://github.com/sson6926/Parcel-Tracking-Telegram-Bot.git
@@ -124,14 +141,46 @@ Xem hướng dẫn chi tiết trong [ARCHITECTURE.md - Adding a New Carrier](ARC
 
 Bot hỗ trợ cả SQLite và MySQL:
 
-**SQLite (mặc định):**
+**SQLite (mặc định - cho development):**
 ```env
 DATABASE_URL=sqlite:///tracking.db
 ```
 
-**MySQL:**
+**MySQL (khuyến khích cho production):**
 ```env
 DATABASE_URL=mysql+pymysql://user:password@localhost:3306/tracking_db
+```
+
+**Azure Database for MySQL:**
+```env
+DATABASE_URL=mysql+pymysql://user:password@server.mysql.database.azure.com:3306/tracking_db?ssl_ca=/etc/ssl/certs/ca-certificates.crt
+```
+
+## ☁️ Deployment Options
+
+### Docker Compose (Recommended for VPS)
+```bash
+docker compose up -d
+```
+
+### Azure Container Apps (Serverless)
+Xem hướng dẫn chi tiết: [docs/AZURE_DEPLOYMENT.md](docs/AZURE_DEPLOYMENT.md)
+
+**Ưu điểm:**
+- ✅ Không cần quản lý VM
+- ✅ Auto-scaling
+- ✅ Pay-per-use (~$20-30/month)
+- ✅ Managed database (Azure MySQL)
+
+**Quick deploy:**
+```bash
+az containerapp create \
+  --name telegram-bot \
+  --resource-group rg-telegram-bot \
+  --image ghcr.io/sson6926/parcel-tracking-telegram-bot:latest \
+  --environment env-telegram-bot \
+  --secrets bot-token="YOUR_TOKEN" \
+  --env-vars "BOT_TOKEN=secretref:bot-token"
 ```
 
 ## 🐛 Troubleshooting

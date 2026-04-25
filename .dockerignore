@@ -1,29 +1,66 @@
+# Git
 .git
 .gitignore
-.idea
-.venv
-.env
-.env.local
-.env.docker
-.python-version
-
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-dist
-build
-
-.DS_Store
-*.db
-*.log
-logs/
-node_modules
-
-docker-compose.yml
-README.md
 .github
 
-tracking.db
-tracking.db-shm
-tracking.db-wal
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Environment
+.env.local
+.env.*.local
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp
