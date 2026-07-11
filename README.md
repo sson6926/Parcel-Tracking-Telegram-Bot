@@ -46,7 +46,7 @@ cd Parcel-Tracking-Telegram-Bot
 
 # 2. Cấu hình môi trường
 cp .env.example .env
-# Sửa BOT_TOKEN trong .env
+# Sửa BOT_TOKEN và DATABASE_URL trong .env
 
 # 3. Khởi động
 docker compose up -d
@@ -60,7 +60,7 @@ docker compose logs -f bot
 | Biến | Bắt buộc | Mặc định | Mô tả |
 |------|----------|----------|-------|
 | `BOT_TOKEN` | ✅ | — | Telegram Bot Token từ [@BotFather](https://t.me/BotFather) |
-| `DATABASE_URL` | | `sqlite:///tracking.db` | Chuỗi kết nối database |
+| `DATABASE_URL` | ✅ khi deploy | `sqlite:///tracking.db` | Chuỗi kết nối database ngoài |
 | `CHECK_INTERVAL_MINUTES` | | `5` | Tần suất kiểm tra cập nhật (phút) |
 | `LOG_LEVEL` | | `INFO` | Mức độ log (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `SENTRY_DSN` | | — | Sentry DSN cho error tracking (tuỳ chọn) |
@@ -146,10 +146,12 @@ Bot hỗ trợ cả SQLite và MySQL:
 DATABASE_URL=sqlite:///tracking.db
 ```
 
-**MySQL (khuyến khích cho production):**
+**MySQL service ngoài (khuyến khích cho production):**
 ```env
-DATABASE_URL=mysql+pymysql://user:password@localhost:3306/tracking_db
+DATABASE_URL=mysql+pymysql://user:password@mysql.example.com:3306/tracking_db
 ```
+
+Nếu username hoặc password có ký tự đặc biệt, cần URL-encode các giá trị đó. Docker Compose chỉ chạy bot và không khởi tạo MySQL nội bộ.
 
 **Azure Database for MySQL:**
 ```env
@@ -160,6 +162,7 @@ DATABASE_URL=mysql+pymysql://user:password@server.mysql.database.azure.com:3306/
 
 ### Docker Compose (Recommended for VPS)
 ```bash
+# DATABASE_URL trong .env phải trỏ tới database service ngoài
 docker compose up -d
 ```
 
@@ -196,9 +199,8 @@ docker compose restart bot
 
 ### Database errors
 ```bash
-# Reset database (⚠️ mất dữ liệu)
-docker compose down -v
-docker compose up -d
+# Kiểm tra chuỗi kết nối database ngoài và logs của bot
+docker compose logs --tail=100 bot
 ```
 
 ### Conflict error

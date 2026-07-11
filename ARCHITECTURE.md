@@ -425,7 +425,8 @@ docker compose up -d
 
 **Services:**
 - `bot` - Telegram bot application
-- `mysql` - Database
+
+Database được cung cấp bởi service ngoài thông qua `DATABASE_URL`; Docker Compose không chạy MySQL nội bộ.
 
 ### GitHub Actions
 - **Quality Check** - Runs pylint, radon on every push
