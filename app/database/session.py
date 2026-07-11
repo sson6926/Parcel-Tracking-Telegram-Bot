@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy import BigInteger, Engine, create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Base
@@ -32,7 +32,22 @@ def create_session_factory(database_url: str):
 def init_db(database_url: str) -> None:
     engine = _get_or_create_engine(database_url)
     Base.metadata.create_all(bind=engine)
-    columns = {column["name"] for column in inspect(engine).get_columns("users")}
+    user_column_list = inspect(engine).get_columns("users")
+    columns = {column["name"] for column in user_column_list}
+    chat_id_column = next(
+        column for column in user_column_list if column["name"] == "telegram_chat_id"
+    )
+    if not isinstance(chat_id_column["type"], BigInteger):
+        if engine.dialect.name == "mysql":
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE users MODIFY telegram_chat_id BIGINT NOT NULL")
+                )
+        elif engine.dialect.name == "postgresql":
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE users ALTER COLUMN telegram_chat_id TYPE BIGINT")
+                )
     if "is_admin" not in columns:
         with engine.begin() as connection:
             connection.execute(
