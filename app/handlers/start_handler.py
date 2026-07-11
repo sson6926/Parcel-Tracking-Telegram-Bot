@@ -13,6 +13,12 @@ class StartHandler(BaseHandler):
 
     async def start_command(self, update: Update, context: CallbackContext) -> None:
         chat_id = update.effective_chat.id
+        telegram_user = update.effective_user
+        self._service.ensure_user(
+            chat_id,
+            telegram_username=telegram_user.username if telegram_user else None,
+            display_name=telegram_user.full_name if telegram_user else None,
+        )
         context.user_data.setdefault("language", "vi")
 
         lang = self._get_user_lang(context)

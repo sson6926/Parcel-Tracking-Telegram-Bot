@@ -75,10 +75,11 @@ class TrackingScheduler:
 
                 try:
                     new_events = self._service._sync_tracking_history(session, tracking, provider)
-                    tracking.next_check_at = now  # reset to now so next scheduler tick will pick it up
+                    if tracking.is_active:
+                        tracking.next_check_at = now  # next scheduler tick will pick it up
                     session.commit()
 
-                    if new_events and self._application:
+                    if new_events and tracking.notification_enabled and self._application:
                         self._send_notifications(chat_id=chat_id, carrier_name=carrier_name,
                                                  tracking_code=tracking_code, new_events=new_events)
                 except Exception:

@@ -157,11 +157,33 @@ class TrackingHandler(BaseHandler):
                         callback_data=f"remove:{tracking_id}",
                     ),
                 ],
+                [
+                    InlineKeyboardButton(
+                        self._i18n.t(
+                            "btn_notification_off" if tracking.notification_enabled else "btn_notification_on",
+                            lang,
+                        ),
+                        callback_data=f"order_notify:{tracking_id}",
+                    )
+                ],
                 [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:list")],
             ]
         )
 
         await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
+
+    async def order_notification_callback(self, update: Update, context: CallbackContext) -> None:
+        query = update.callback_query
+        chat_id = update.effective_chat.id
+        tracking_id = int(query.data.split(":")[-1])
+        enabled = self._service.toggle_tracking_notification(chat_id, tracking_id)
+        if enabled is None:
+            await query.answer(
+                self._i18n.t("order_not_found", self._get_user_lang(context)),
+                show_alert=True,
+            )
+            return
+        await self.order_callback(update, context)
 
     async def order_timeline_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query

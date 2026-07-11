@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import Carrier, Tracking, TrackingEvent, User
@@ -85,6 +85,11 @@ class TrackingService:
             for code, name in SUPPORTED_CARRIERS.items():
                 if code not in existing:
                     session.add(Carrier(code=code, name=name))
+            session.execute(
+                update(Tracking)
+                .where(Tracking.last_status == TrackingStatus.DELIVERED.value)
+                .values(is_active=False, next_check_at=None)
+            )
             session.commit()
             logger.info("Carriers seeded: %s", list(SUPPORTED_CARRIERS.keys()))
 
@@ -95,6 +100,178 @@ class TrackingService:
             session.add(user)
             session.flush()
         return user
+
+    def ensure_user(
+        self,
+        telegram_chat_id: int,
+        telegram_username: str | None = None,
+        display_name: str | None = None,
+    ) -> User:
+        """Create a user record early so an administrator can grant permissions."""
+        with self._session_factory() as session:
+            user = self._get_or_create_user(session, telegram_chat_id)
+            if telegram_username is not None:
+                user.telegram_username = telegram_username
+            if display_name:
+                user.display_name = display_name
+            session.commit()
+            session.refresh(user)
+            return user
+
+    def is_admin(self, telegram_chat_id: int) -> bool:
+        with self._session_factory() as session:
+            return bool(session.scalar(
+                select(User.is_admin).where(User.telegram_chat_id == telegram_chat_id)
+            ))
+
+    def get_admin_dashboard_stats(self) -> dict[str, int]:
+        with self._session_factory() as session:
+            return {
+                "users": session.scalar(select(func.count(User.id))) or 0,
+                "admins": session.scalar(
+                    select(func.count(User.id)).where(User.is_admin.is_(True))
+                ) or 0,
+                "orders": session.scalar(select(func.count(Tracking.id))) or 0,
+                "active_orders": session.scalar(
+                    select(func.count(Tracking.id)).where(Tracking.is_active.is_(True))
+                ) or 0,
+                "delivered_orders": session.scalar(
+                    select(func.count(Tracking.id)).where(
+                        Tracking.last_status == TrackingStatus.DELIVERED.value
+                    )
+                ) or 0,
+                "failed_orders": session.scalar(
+                    select(func.count(Tracking.id)).where(
+                        Tracking.last_status == TrackingStatus.FAILED.value
+                    )
+                ) or 0,
+            }
+
+    def admin_list_users(self, offset: int = 0, limit: int = 10) -> tuple[list[dict[str, object]], int]:
+        with self._session_factory() as session:
+            total = session.scalar(select(func.count(User.id))) or 0
+            order_count = (
+                select(Tracking.user_id, func.count(Tracking.id).label("order_count"))
+                .group_by(Tracking.user_id)
+                .subquery()
+            )
+            rows = session.execute(
+                select(User, func.coalesce(order_count.c.order_count, 0))
+                .outerjoin(order_count, order_count.c.user_id == User.id)
+                .order_by(User.created_at.desc(), User.id.desc())
+                .offset(offset)
+                .limit(limit)
+            ).all()
+            return [
+                {
+                    "id": user.id,
+                    "chat_id": user.telegram_chat_id,
+                    "username": user.telegram_username,
+                    "display_name": user.display_name,
+                    "is_admin": user.is_admin,
+                    "created_at": user.created_at,
+                    "order_count": count,
+                }
+                for user, count in rows
+            ], total
+
+    def admin_get_user(self, user_id: int) -> dict[str, object] | None:
+        with self._session_factory() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            total_orders = session.scalar(
+                select(func.count(Tracking.id)).where(Tracking.user_id == user.id)
+            ) or 0
+            active_orders = session.scalar(
+                select(func.count(Tracking.id)).where(
+                    Tracking.user_id == user.id, Tracking.is_active.is_(True)
+                )
+            ) or 0
+            return {
+                "id": user.id,
+                "chat_id": user.telegram_chat_id,
+                "username": user.telegram_username,
+                "display_name": user.display_name,
+                "is_admin": user.is_admin,
+                "created_at": user.created_at,
+                "order_count": total_orders,
+                "active_order_count": active_orders,
+            }
+
+    def admin_toggle_user_admin(self, user_id: int) -> bool | None:
+        with self._session_factory() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            user.is_admin = not user.is_admin
+            session.commit()
+            return user.is_admin
+
+    def admin_list_orders(self, offset: int = 0, limit: int = 10) -> tuple[list[dict[str, object]], int]:
+        with self._session_factory() as session:
+            total = session.scalar(select(func.count(Tracking.id))) or 0
+            rows = session.execute(
+                select(Tracking, User.telegram_chat_id, Carrier.name)
+                .join(User, Tracking.user_id == User.id)
+                .join(Carrier, Tracking.carrier_id == Carrier.id)
+                .order_by(Tracking.created_at.desc(), Tracking.id.desc())
+                .offset(offset)
+                .limit(limit)
+            ).all()
+            return [
+                {
+                    "id": tracking.id,
+                    "tracking_code": tracking.tracking_code,
+                    "status": tracking.last_status,
+                    "is_active": tracking.is_active,
+                    "chat_id": chat_id,
+                    "carrier": carrier_name,
+                    "created_at": tracking.created_at,
+                }
+                for tracking, chat_id, carrier_name in rows
+            ], total
+
+    def admin_get_order(self, tracking_id: int) -> dict[str, object] | None:
+        with self._session_factory() as session:
+            row = session.execute(
+                select(Tracking, User.telegram_chat_id, Carrier.name)
+                .join(User, Tracking.user_id == User.id)
+                .join(Carrier, Tracking.carrier_id == Carrier.id)
+                .where(Tracking.id == tracking_id)
+            ).first()
+            if row is None:
+                return None
+            tracking, chat_id, carrier_name = row
+            event_count = session.scalar(
+                select(func.count(TrackingEvent.id)).where(TrackingEvent.tracking_id == tracking.id)
+            ) or 0
+            return {
+                "id": tracking.id,
+                "tracking_code": tracking.tracking_code,
+                "status": tracking.last_status,
+                "is_active": tracking.is_active,
+                "chat_id": chat_id,
+                "carrier": carrier_name,
+                "event_count": event_count,
+                "created_at": tracking.created_at,
+            }
+
+    def admin_toggle_order_active(self, tracking_id: int) -> bool | None:
+        with self._session_factory() as session:
+            tracking = session.get(Tracking, tracking_id)
+            if tracking is None:
+                return None
+            if tracking.last_status == TrackingStatus.DELIVERED.value:
+                tracking.is_active = False
+                tracking.next_check_at = None
+                session.commit()
+                return False
+            tracking.is_active = not tracking.is_active
+            if tracking.is_active:
+                tracking.next_check_at = datetime.now(timezone.utc)
+            session.commit()
+            return tracking.is_active
 
     @staticmethod
     def _insert_event_if_new(session: Session, tracking: Tracking, event) -> None:
@@ -172,6 +349,13 @@ class TrackingService:
         latest_event = history[-1]
         tracking.last_status = latest_event.status.value
         tracking.last_event_hash = latest_event.event_hash
+        if latest_event.status == TrackingStatus.DELIVERED:
+            tracking.is_active = False
+            tracking.next_check_at = None
+            logger.info(
+                "Tracking completed and monitoring stopped: code=%s",
+                tracking.tracking_code,
+            )
         return new_events
 
     def add_tracking(self, telegram_chat_id: int, tracking_code: str, carrier_code_override: str | None = None) -> Tracking:
@@ -202,8 +386,10 @@ class TrackingService:
 
             now = datetime.now(timezone.utc)
             if existing:
-                existing.is_active = True
-                existing.next_check_at = now
+                is_completed = existing.last_status == TrackingStatus.DELIVERED.value
+                existing.is_active = not is_completed
+                existing.is_deleted = False
+                existing.next_check_at = None if is_completed else now
                 tracking = existing
             else:
                 tracking = Tracking(
@@ -219,7 +405,7 @@ class TrackingService:
 
             session.flush()
 
-            if provider is not None:
+            if provider is not None and tracking.last_status != TrackingStatus.DELIVERED.value:
                 try:
                     require_history = existing is None and carrier_code == "shopeeexpress"
                     self._sync_tracking_history(session, tracking, provider, require_history=require_history, notify=False)
@@ -243,8 +429,8 @@ class TrackingService:
             return list(session.scalars(
                 select(Tracking)
                 .options(joinedload(Tracking.carrier))
-                .where(Tracking.user_id == user.id, Tracking.is_active.is_(True))
-                .order_by(Tracking.next_check_at.asc())
+                .where(Tracking.user_id == user.id, Tracking.is_deleted.is_(False))
+                .order_by(Tracking.created_at.desc())
             ).all())
 
     def get_user_profile_summary(self, telegram_chat_id: int) -> dict[str, object]:
@@ -275,6 +461,23 @@ class TrackingService:
                 .where(Tracking.id == tracking_id, Tracking.user_id == user.id)
             )
 
+    def toggle_tracking_notification(self, telegram_chat_id: int, tracking_id: int) -> bool | None:
+        """Toggle notifications only when the tracking belongs to the requesting user."""
+        with self._session_factory() as session:
+            tracking = session.scalar(
+                select(Tracking)
+                .join(User, Tracking.user_id == User.id)
+                .where(
+                    Tracking.id == tracking_id,
+                    User.telegram_chat_id == telegram_chat_id,
+                )
+            )
+            if tracking is None:
+                return None
+            tracking.notification_enabled = not tracking.notification_enabled
+            session.commit()
+            return tracking.notification_enabled
+
     def get_tracking_events(self, telegram_chat_id: int, tracking_id: int) -> list[TrackingEvent]:
         with self._session_factory() as session:
             user = session.scalar(select(User).where(User.telegram_chat_id == telegram_chat_id))
@@ -303,6 +506,8 @@ class TrackingService:
             if tracking is None:
                 return False
             tracking.is_active = False
+            tracking.is_deleted = True
+            tracking.next_check_at = None
             session.commit()
             logger.info("Tracking removed: user=%s code=%s", telegram_chat_id, normalized_code)
             return True

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, false, true
 from sqlalchemy.orm import relationship
 
 from app.models.base import Base, utcnow
@@ -15,6 +15,8 @@ class Tracking(Base):
     last_event_hash = Column(String(100), nullable=True)
     next_check_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    is_deleted = Column(Boolean, default=False, server_default=false(), nullable=False)
+    notification_enabled = Column(Boolean, default=True, server_default=true(), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
