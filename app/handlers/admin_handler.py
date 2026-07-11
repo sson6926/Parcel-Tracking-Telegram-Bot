@@ -4,12 +4,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import CallbackContext
+from telegram.error import TelegramError
+from telegram.ext import ApplicationHandlerStop, CallbackContext
 
 from app.handlers.base_handler import BaseHandler
 from app.utils import formatter
 
 PAGE_SIZE = 10
+BROADCAST_WAITING_KEY = "admin_broadcast_waiting"
 
 
 class AdminHandler(BaseHandler):
@@ -37,6 +39,13 @@ class AdminHandler(BaseHandler):
         parts = query.data.split(":")
         action = parts[1]
         if action in {"home", "refresh"}:
+            context.user_data.pop(BROADCAST_WAITING_KEY, None)
+            await self._show_dashboard(update, context)
+        elif action == "broadcast":
+            context.user_data[BROADCAST_WAITING_KEY] = True
+            await self._show_broadcast_prompt(update, context)
+        elif action == "broadcast_cancel":
+            context.user_data.pop(BROADCAST_WAITING_KEY, None)
             await self._show_dashboard(update, context)
         elif action == "users":
             await self._show_users(update, context, int(parts[2]) if len(parts) > 2 else 0)
@@ -72,10 +81,65 @@ class AdminHandler(BaseHandler):
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton(self._i18n.t("admin_manage_users", lang), callback_data="admin:users:0")],
             [InlineKeyboardButton(self._i18n.t("admin_manage_orders", lang), callback_data="admin:orders:0")],
+            [InlineKeyboardButton(self._i18n.t("admin_broadcast", lang), callback_data="admin:broadcast")],
             [InlineKeyboardButton(self._i18n.t("admin_refresh", lang), callback_data="admin:refresh")],
             [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")],
         ])
         await self._send_or_edit(update, context, update.effective_chat.id, text, keyboard, "HTML")
+
+    async def _show_broadcast_prompt(self, update: Update, context: CallbackContext) -> None:
+        lang = self._get_user_lang(context)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                self._i18n.t("admin_broadcast_cancel", lang),
+                callback_data="admin:broadcast_cancel",
+            )
+        ]])
+        await self._safe_edit_message_text(
+            update.callback_query,
+            f"<b>{formatter.esc(self._i18n.t('admin_broadcast_prompt', lang))}</b>",
+            keyboard,
+            "HTML",
+        )
+
+    async def broadcast_message(self, update: Update, context: CallbackContext) -> None:
+        if not context.user_data.get(BROADCAST_WAITING_KEY):
+            return
+        if update.message is None:
+            return
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        context.user_data.pop(BROADCAST_WAITING_KEY, None)
+        if not self._service.is_admin(chat_id):
+            await update.message.reply_text(self._i18n.t("admin_forbidden", lang))
+            raise ApplicationHandlerStop
+
+        message_text = update.message.text or ""
+        recipient_ids = self._service.admin_get_broadcast_chat_ids()
+        sent = 0
+        failed = 0
+        for recipient_id in recipient_ids:
+            try:
+                await context.bot.send_message(chat_id=recipient_id, text=message_text)
+                sent += 1
+            except TelegramError:
+                failed += 1
+
+        result = self._i18n.t(
+            "admin_broadcast_result",
+            lang,
+            sent=sent,
+            failed=failed,
+        )
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"<b>{formatter.esc(result)}</b>",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="admin:home")
+            ]]),
+            parse_mode="HTML",
+        )
+        raise ApplicationHandlerStop
 
     async def _show_users(self, update: Update, context: CallbackContext, page: int) -> None:
         lang = self._get_user_lang(context)
@@ -85,7 +149,7 @@ class AdminHandler(BaseHandler):
         if page * PAGE_SIZE >= total and total:
             users, _ = self._service.admin_list_users(page * PAGE_SIZE, PAGE_SIZE)
         buttons = [[InlineKeyboardButton(
-            f"{'🛡️' if u['is_admin'] else '👤'} {u['display_name'] or u['username'] or u['chat_id']} · 📦 {u['order_count']}",
+            f"{'🛡️' if u['is_admin'] else '👤'} {u['display_name'] or u['username'] or u['chat_id']} · 💳 {u['credits']} · 📦 {u['order_count']}",
             callback_data=f"admin:user:{u['id']}:{page}",
         )] for u in users]
         buttons.append(self._nav("users", page, pages))
@@ -107,6 +171,7 @@ class AdminHandler(BaseHandler):
             f"Username: <code>{formatter.esc('@' + user['username'] if user['username'] else '-')}</code>\n"
             f"Chat ID: <code>{user['chat_id']}</code>\n"
             f"Admin: <b>{'Yes' if user['is_admin'] else 'No'}</b>\n"
+            f"Credits: <b>{user['credits']}</b>\n"
             f"📦 {user['order_count']} · 🔔 {user['active_order_count']}\n🕒 {formatter.esc(created)}"
         )
         toggle_key = "admin_revoke_admin" if user["is_admin"] else "admin_grant_admin"

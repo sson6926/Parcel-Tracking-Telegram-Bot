@@ -39,6 +39,8 @@ class HelpHandler(BaseHandler):
             await self._send_help_command(chat_id, update, context, lang)
         elif data == "help:language":
             await self._send_help_language(chat_id, update, context, lang)
+        elif data == "help:add_credit":
+            await self._send_add_credit_info(chat_id, update, context, lang)
 
     async def _send_help_intro(self, chat_id: int, update: Update, context: CallbackContext, lang: str, edit_message: bool = False) -> None:
         text = f"<b>{formatter.esc(self._i18n.t('help_intro', lang))}</b>"
@@ -58,6 +60,12 @@ class HelpHandler(BaseHandler):
                     InlineKeyboardButton(
                         self._i18n.t("help_language", lang),
                         callback_data="help:language",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_back", lang),
+                        callback_data="cmd:menu",
                     ),
                 ],
             ]
@@ -90,21 +98,49 @@ class HelpHandler(BaseHandler):
         text += f"<b>{formatter.esc(self._i18n.t('label_chat_id', lang))}:</b> <code>{chat_id}</code>\n"
         text += f"<b>{formatter.esc(self._i18n.t('label_language', lang))}:</b> <i>{formatter.esc(self._i18n.language_name(lang, lang))}</i>"
         text += "\n\n"
-        text += f"<b>{formatter.esc(self._i18n.t('profile_stats_title', lang))}</b>\n"
-        text += f"• {formatter.esc(self._i18n.t('profile_joined_at', lang, value=joined_value))}\n"
-        text += f"• {formatter.esc(self._i18n.t('profile_total_orders', lang, value=summary.get('total_orders', 0)))}\n"
-        text += f"• {formatter.esc(self._i18n.t('profile_active_orders', lang, value=summary.get('active_orders', 0)))}\n"
-        text += f"• {formatter.esc(self._i18n.t('profile_delivered_orders', lang, value=summary.get('delivered_orders', 0)))}\n"
-        text += f"• {formatter.esc(self._i18n.t('profile_failed_orders', lang, value=summary.get('failed_orders', 0)))}\n"
-        text += f"• {formatter.esc(self._i18n.t('profile_carriers_used', lang, value=summary.get('carriers_used', 0)))}"
+        text += f"📊 <b>{formatter.esc(self._i18n.t('profile_stats_title', lang))}</b>\n"
+        text += f"💳 {formatter.esc(self._i18n.t('profile_credits', lang, value=summary.get('credits', 0)))}\n"
+        text += f"📅 {formatter.esc(self._i18n.t('profile_joined_at', lang, value=joined_value))}\n"
+        text += f"📦 {formatter.esc(self._i18n.t('profile_total_orders', lang, value=summary.get('total_orders', 0)))}\n"
+        text += f"🔔 {formatter.esc(self._i18n.t('profile_active_orders', lang, value=summary.get('active_orders', 0)))}\n"
+        text += f"✅ {formatter.esc(self._i18n.t('profile_delivered_orders', lang, value=summary.get('delivered_orders', 0)))}\n"
+        text += f"❌ {formatter.esc(self._i18n.t('profile_failed_orders', lang, value=summary.get('failed_orders', 0)))}\n"
+        text += f"🚚 {formatter.esc(self._i18n.t('profile_carriers_used', lang, value=summary.get('carriers_used', 0)))}"
 
         keyboard = InlineKeyboardMarkup(
             [
+                [
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_add_credit", lang),
+                        callback_data="help:add_credit",
+                    )
+                ],
                 [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
             ]
         )
 
         await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
+
+    async def _send_add_credit_info(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
+        text = (
+            f"<b>{formatter.esc(self._i18n.t('add_credit_title', lang))}</b>\n\n"
+            f"{formatter.esc(self._i18n.t('add_credit_contact_owner', lang))}"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:profile")
+        ]])
+        await self._safe_edit_message_text(
+            update.callback_query,
+            text,
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
 
     async def _send_help_command(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
         text = f"<b>{formatter.esc(self._i18n.t('help_command', lang))}</b>\n\n"

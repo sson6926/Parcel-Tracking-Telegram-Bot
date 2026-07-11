@@ -1,7 +1,7 @@
 """Start command handler."""
 from __future__ import annotations
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext
 
 from app.handlers.base_handler import BaseHandler
@@ -37,3 +37,20 @@ class StartHandler(BaseHandler):
             reply_markup=self._build_main_keyboard(lang),
             parse_mode="HTML",
         )
+
+    async def mission_callback(self, update: Update, context: CallbackContext) -> None:
+        query = update.callback_query
+        await query.answer()
+        lang = self._get_user_lang(context)
+        text = (
+            f"<b>{formatter.esc(self._i18n.t('mission_title', lang))}</b>\n\n"
+            f"<b>{formatter.esc(self._i18n.t('mission_problem_title', lang))}</b>\n"
+            f"{formatter.esc(self._i18n.t('mission_problem', lang))}\n\n"
+            f"<b>{formatter.esc(self._i18n.t('mission_solution_title', lang))}</b>\n"
+            f"{formatter.esc(self._i18n.t('mission_solution', lang))}\n\n"
+            f"<i>{formatter.esc(self._i18n.t('mission_commitment', lang))}</i>"
+        )
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")
+        ]])
+        await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")

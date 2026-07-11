@@ -75,6 +75,12 @@ class BaseHandler:
                         callback_data="lang:list",
                     ),
                 ],
+                [
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_mission", lang),
+                        callback_data="info:mission",
+                    ),
+                ],
             ]
         )
 

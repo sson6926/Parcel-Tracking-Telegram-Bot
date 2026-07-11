@@ -168,12 +168,19 @@ class TrackingService:
                     "chat_id": user.telegram_chat_id,
                     "username": user.telegram_username,
                     "display_name": user.display_name,
+                    "credits": user.credits,
                     "is_admin": user.is_admin,
                     "created_at": user.created_at,
                     "order_count": count,
                 }
                 for user, count in rows
             ], total
+
+    def admin_get_broadcast_chat_ids(self) -> list[int]:
+        with self._session_factory() as session:
+            return list(session.scalars(
+                select(User.telegram_chat_id).order_by(User.id.asc())
+            ).all())
 
     def admin_get_user(self, user_id: int) -> dict[str, object] | None:
         with self._session_factory() as session:
@@ -193,6 +200,7 @@ class TrackingService:
                 "chat_id": user.telegram_chat_id,
                 "username": user.telegram_username,
                 "display_name": user.display_name,
+                "credits": user.credits,
                 "is_admin": user.is_admin,
                 "created_at": user.created_at,
                 "order_count": total_orders,
@@ -392,6 +400,9 @@ class TrackingService:
                 existing.next_check_at = None if is_completed else now
                 tracking = existing
             else:
+                if user.credits <= 0:
+                    raise ValueError("error.insufficient_credits")
+                user.credits -= 1
                 tracking = Tracking(
                     user_id=user.id,
                     carrier_id=carrier.id,
@@ -421,6 +432,13 @@ class TrackingService:
             logger.info("Tracking added: user=%s code=%s carrier=%s", telegram_chat_id, normalized_code, carrier_code)
             return tracking
 
+    def get_user_credits(self, telegram_chat_id: int) -> int:
+        with self._session_factory() as session:
+            credits = session.scalar(
+                select(User.credits).where(User.telegram_chat_id == telegram_chat_id)
+            )
+            return int(credits or 0)
+
     def list_trackings(self, telegram_chat_id: int) -> list[Tracking]:
         with self._session_factory() as session:
             user = session.scalar(select(User).where(User.telegram_chat_id == telegram_chat_id))
@@ -437,12 +455,13 @@ class TrackingService:
         with self._session_factory() as session:
             user = session.scalar(select(User).where(User.telegram_chat_id == telegram_chat_id))
             if user is None:
-                return {"joined_at": None, "total_orders": 0, "active_orders": 0,
+                return {"joined_at": None, "credits": 0, "total_orders": 0, "active_orders": 0,
                         "delivered_orders": 0, "failed_orders": 0, "carriers_used": 0}
 
             trackings = session.scalars(select(Tracking).where(Tracking.user_id == user.id)).all()
             return {
                 "joined_at": user.created_at,
+                "credits": user.credits,
                 "total_orders": len(trackings),
                 "active_orders": sum(1 for t in trackings if t.is_active),
                 "delivered_orders": sum(1 for t in trackings if t.last_status == TrackingStatus.DELIVERED.value),

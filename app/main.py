@@ -85,6 +85,11 @@ def main() -> None:
     application.add_handler(CommandHandler("lang", lang_handler.lang_command))
     application.add_handler(CommandHandler("admin", admin_handler.admin_command))
 
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, admin_handler.broadcast_message),
+        group=-1,
+    )
+
     application.add_handler(CallbackQueryHandler(help_handler.help_callback, pattern="^help:"))
     application.add_handler(CallbackQueryHandler(lang_handler.lang_callback, pattern="^lang:"))
     application.add_handler(CallbackQueryHandler(tracking_handler.cmd_callback, pattern="^cmd:"))
@@ -94,6 +99,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(tracking_handler.remove_callback, pattern="^remove:"))
     application.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop"))
     application.add_handler(CallbackQueryHandler(admin_handler.admin_callback, pattern="^admin:"))
+    application.add_handler(CallbackQueryHandler(start_handler.mission_callback, pattern="^info:mission$"))
 
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=PTBUserWarning)

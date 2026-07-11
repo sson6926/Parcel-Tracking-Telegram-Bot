@@ -41,6 +41,7 @@ class TrackingHandler(BaseHandler):
                 code=tracking.tracking_code,
                 carrier=tracking.carrier.name,
                 status=status_text,
+                credits=self._service.get_user_credits(chat_id),
             )
             return f"<b>{formatter.esc(raw_text)}</b>"
         except ValueError as e:
