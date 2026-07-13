@@ -38,14 +38,14 @@ class TrackingService:
         Auto-detect carrier from tracking code.
         
         Patterns:
-        - Shopee: SPX*/SLS* (starts with SPX or SLS)
+        - Shopee: SPX*/SLS*/VN* (starts with SPX, SLS, or VN)
         - JT Express: JT* or pure digits (10-15 chars)
         - GHN: 8 uppercase alphanumeric chars (e.g., GYKEQFDX, GYWFRP6T)
         """
         code = tracking_code.strip().upper()
         
         # Shopee Express
-        if code.startswith(("SPX", "SLS")):
+        if code.startswith(("SPX", "SLS", "VN")):
             return "shopeeexpress"
         
         # JT Express
@@ -68,7 +68,7 @@ class TrackingService:
         carrier = carrier_code.strip().lower()
         
         if carrier == "shopeeexpress":
-            return code.startswith(("SPX", "SLS"))
+            return code.startswith(("SPX", "SLS", "VN"))
         
         if carrier == "jtexpress":
             return code.startswith("JT") or (code.isdigit() and 10 <= len(code) <= 15)
