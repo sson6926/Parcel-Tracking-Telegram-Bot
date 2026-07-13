@@ -19,6 +19,31 @@ def get_check_interval() -> int:
     return int(os.getenv("CHECK_INTERVAL_MINUTES", "5"))
 
 
+def get_bot_mode() -> str:
+    """Get bot mode: 'polling' or 'webhook'"""
+    return os.getenv("BOT_MODE", "polling").strip().lower()
+
+
+def get_webhook_url() -> str:
+    """Get webhook URL (e.g., https://yourdomain.com)"""
+    return os.getenv("WEBHOOK_URL", "").strip()
+
+
+def get_webhook_path() -> str:
+    """Get webhook endpoint path"""
+    return os.getenv("WEBHOOK_PATH", "/webhook").strip()
+
+
+def get_webhook_port() -> int:
+    """Get webhook server port"""
+    return int(os.getenv("WEBHOOK_PORT", "8443"))
+
+
+def get_webhook_secret() -> str:
+    """Get webhook secret token"""
+    return os.getenv("WEBHOOK_SECRET", "").strip()
+
+
 def setup_logging() -> None:
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     logging.basicConfig(
