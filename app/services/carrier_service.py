@@ -22,11 +22,17 @@ def detect_carrier(tracking_code: str) -> str | None:
     Auto-detect carrier from tracking code.
 
     Patterns:
-    - Shopee Express : SPX* / SLS* / VN*
+    - GHN            : VNGH* prefix, or exactly 8 uppercase alphanumeric chars with ≥1 letter
+    - Shopee Express : SPX* / SLS* / VN* (but NOT VNGH*)
     - JT Express     : JT* or pure digits (10–15 chars)
-    - GHN            : exactly 8 uppercase alphanumeric chars with ≥1 letter
     """
     code = tracking_code.strip().upper()
+
+    # GHN must be checked before Shopee — VNGH* would otherwise match VN*
+    if code.startswith("VNGH"):
+        return "ghn"
+    if len(code) == 8 and code.isalnum() and any(c.isalpha() for c in code):
+        return "ghn"
 
     if code.startswith(("SPX", "SLS", "VN")):
         return "shopeeexpress"
@@ -35,9 +41,6 @@ def detect_carrier(tracking_code: str) -> str | None:
         return "jtexpress"
     if code.isdigit() and 10 <= len(code) <= 15:
         return "jtexpress"
-
-    if len(code) == 8 and code.isalnum() and any(c.isalpha() for c in code):
-        return "ghn"
 
     return None
 
@@ -48,6 +51,9 @@ def is_valid_for_carrier(tracking_code: str, carrier_code: str) -> bool:
     carrier = carrier_code.strip().lower()
 
     if carrier == "shopeeexpress":
+        # Exclude VNGH* — those belong to GHN
+        if code.startswith("VNGH"):
+            return False
         return code.startswith(("SPX", "SLS", "VN"))
 
     if carrier == "jtexpress":
@@ -56,6 +62,8 @@ def is_valid_for_carrier(tracking_code: str, carrier_code: str) -> bool:
         return code.startswith("JT") or (code.isdigit() and 10 <= len(code) <= 15)
 
     if carrier == "ghn":
+        if code.startswith("VNGH"):
+            return True
         return len(code) == 8 and code.isalnum() and any(c.isalpha() for c in code)
 
     return True

@@ -145,7 +145,10 @@ class TrackingService:
         )
         if carrier_code is None:
             raise ValueError("error.unsupported_tracking_code")
-        if not is_valid_for_carrier(normalized_code, carrier_code):
+        # Only validate format when carrier was auto-detected (no explicit override).
+        # When the user picks the carrier manually, skip regex — the provider will
+        # reject invalid codes via InvalidTrackingCodeError during the initial sync.
+        if carrier_code_override is None and not is_valid_for_carrier(normalized_code, carrier_code):
             raise ValueError("error.invalid_tracking_code")
 
         with self._session_factory() as session:
