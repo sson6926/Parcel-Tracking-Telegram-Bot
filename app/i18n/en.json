@@ -56,6 +56,7 @@
     "error_add_tracking_generic": "Error adding tracking",
     "error.invalid_tracking_code": "Invalid or non-existent tracking code",
     "error.insufficient_credits": "You have no credits left. A new order cannot be added.",
+    "error.tracking_fetch_failed": "Could not retrieve tracking information. Please check the code and try again later.",
     "remove_select_prompt": "Select order to remove",
     "profile_stats_title": "Account Statistics",
     "profile_credits": "Credits remaining: {value}",
@@ -100,7 +101,10 @@
     "admin_broadcast_result": "Sent: {sent} · Failed: {failed}",
     "btn_add_credit": "➕ Add credits",
     "add_credit_title": "💳 Add credits",
-    "add_credit_contact_owner": "Please contact the Bot Owner for help adding credits. Automatic credit top-ups will be available later."
+    "add_credit_contact_owner": "Please contact the Bot Owner for help adding credits. Automatic credit top-ups will be available later.",
+    "jt_enter_phone": "Enter the last 4 digits of recipient's phone number:",
+    "jt_phone_invalid": "Please enter exactly 4 digits",
+    "jt_format_invalid": "Invalid format. Please use format: tracking code-last 4 digits of phone"
   },
   "status": {
     "CREATED": "Created",

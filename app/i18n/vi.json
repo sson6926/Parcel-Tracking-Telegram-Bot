@@ -56,6 +56,7 @@
     "error_add_tracking_generic": "Lỗi khi thêm đơn hàng",
     "error.invalid_tracking_code": "Mã vận đơn không hợp lệ hoặc không tồn tại",
     "error.insufficient_credits": "Bạn đã hết credit. Không thể thêm đơn hàng mới.",
+    "error.tracking_fetch_failed": "Không thể lấy thông tin vận đơn. Vui lòng kiểm tra lại mã và thử lại sau.",
     "remove_select_prompt": "Chọn đơn hàng để xóa",
     "profile_stats_title": "Thống kê tài khoản",
     "profile_credits": "Credit còn lại: {value}",
@@ -98,6 +99,9 @@
     "admin_broadcast_prompt": "Nhập nội dung cần gửi đến tất cả người dùng. Tin nhắn tiếp theo của bạn sẽ được gửi ngay.",
     "admin_broadcast_cancel": "❌ Hủy broadcast",
     "admin_broadcast_result": "Đã gửi: {sent} · Thất bại: {failed}",
+    "jt_enter_phone": "Nhập 4 số cuối số điện thoại người nhận:",
+    "jt_phone_invalid": "Vui lòng nhập đúng 4 chữ số",
+    "jt_format_invalid": "Định dạng không đúng. Vui lòng nhập theo mẫu: mã vận đơn-4 số cuối SĐT",
     "btn_add_credit": "➕ Thêm credit",
     "add_credit_title": "💳 Thêm credit",
     "add_credit_contact_owner": "Vui lòng liên hệ Bot Owner để được hỗ trợ thêm credit. Tính năng nạp credit tự động sẽ được cập nhật sau."
