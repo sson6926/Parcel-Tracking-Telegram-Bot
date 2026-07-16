@@ -111,6 +111,17 @@ class TrackingService:
     def admin_toggle_user_admin(self, user_id: int) -> bool | None:
         return self._admin_svc.toggle_user_admin(user_id)
 
+    def admin_toggle_user_banned(self, user_id: int) -> bool | None:
+        return self._admin_svc.toggle_user_banned(user_id)
+
+    def admin_adjust_user_credits(self, user_id: int, delta: int) -> int | None:
+        return self._admin_svc.adjust_user_credits(user_id, delta)
+
+    def admin_list_user_orders(
+        self, user_id: int, offset: int = 0, limit: int = 10
+    ) -> tuple[list[dict[str, object]], int]:
+        return self._admin_svc.list_user_orders(user_id, offset, limit)
+
     def admin_list_orders(
         self, offset: int = 0, limit: int = 10
     ) -> tuple[list[dict[str, object]], int]:

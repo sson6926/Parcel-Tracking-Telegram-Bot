@@ -12,6 +12,7 @@ class User(Base):
     telegram_username = Column(String(100), nullable=True)
     display_name = Column(String(200), nullable=True)
     is_admin = Column(Boolean, default=False, server_default=false(), nullable=False)
+    is_banned = Column(Boolean, default=False, server_default=false(), nullable=False)
     credits = Column(Integer, default=100, server_default="100", nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 

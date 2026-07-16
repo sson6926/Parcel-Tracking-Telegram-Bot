@@ -64,6 +64,11 @@ def init_db(database_url: str) -> None:
             connection.execute(
                 text("ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 100")
             )
+    if "is_banned" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN is_banned BOOLEAN NOT NULL DEFAULT FALSE")
+            )
     tracking_columns = {column["name"] for column in inspect(engine).get_columns("trackings")}
     if "notification_enabled" not in tracking_columns:
         with engine.begin() as connection:

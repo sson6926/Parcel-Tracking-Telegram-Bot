@@ -33,6 +33,10 @@ class HelpHandler(BaseHandler):
 
         if data == "help:intro":
             await self._send_help_intro(chat_id, update, context, lang, edit_message=True)
+        elif data == "help:how_to_add":
+            await self._send_how_to_add(chat_id, update, context, lang)
+        elif data == "help:notifications":
+            await self._send_notifications_info(chat_id, update, context, lang)
         elif data == "help:profile":
             await self._send_help_profile(chat_id, update, context, lang)
         elif data == "help:command":
@@ -42,34 +46,56 @@ class HelpHandler(BaseHandler):
         elif data == "help:add_credit":
             await self._send_add_credit_info(chat_id, update, context, lang)
 
-    async def _send_help_intro(self, chat_id: int, update: Update, context: CallbackContext, lang: str, edit_message: bool = False) -> None:
-        text = f"<b>{formatter.esc(self._i18n.t('help_intro', lang))}</b>"
-        keyboard = InlineKeyboardMarkup(
+    # ------------------------------------------------------------------
+    # Intro
+    # ------------------------------------------------------------------
+
+    async def _send_help_intro(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+        edit_message: bool = False,
+    ) -> None:
+        title = self._i18n.t("help_intro", lang)
+        body = self._i18n.t("help_intro_body", lang)
+        text = f"<b>{formatter.esc(title)}</b>\n\n{body}"
+
+        keyboard = InlineKeyboardMarkup([
             [
-                [
-                    InlineKeyboardButton(
-                        self._i18n.t("help_profile", lang),
-                        callback_data="help:profile",
-                    ),
-                    InlineKeyboardButton(
-                        self._i18n.t("help_command", lang),
-                        callback_data="help:command",
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        self._i18n.t("help_language", lang),
-                        callback_data="help:language",
-                    ),
-                ],
-                [
-                    InlineKeyboardButton(
-                        self._i18n.t("btn_back", lang),
-                        callback_data="cmd:menu",
-                    ),
-                ],
-            ]
-        )
+                InlineKeyboardButton(
+                    self._i18n.t("help_how_to_add", lang),
+                    callback_data="help:how_to_add",
+                ),
+                InlineKeyboardButton(
+                    self._i18n.t("help_notifications", lang),
+                    callback_data="help:notifications",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    self._i18n.t("help_profile", lang),
+                    callback_data="help:profile",
+                ),
+                InlineKeyboardButton(
+                    self._i18n.t("help_command", lang),
+                    callback_data="help:command",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    self._i18n.t("help_language", lang),
+                    callback_data="help:language",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    self._i18n.t("btn_back", lang),
+                    callback_data="cmd:menu",
+                ),
+            ],
+        ])
 
         if edit_message and update.callback_query:
             await self._safe_edit_message_text(
@@ -86,7 +112,62 @@ class HelpHandler(BaseHandler):
                 parse_mode="HTML",
             )
 
-    async def _send_help_profile(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
+    # ------------------------------------------------------------------
+    # How to add an order
+    # ------------------------------------------------------------------
+
+    async def _send_how_to_add(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
+        title = self._i18n.t("help_how_to_add", lang)
+        body = self._i18n.t("help_how_to_add_body", lang)
+        text = f"<b>{formatter.esc(title)}</b>\n\n{body}"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(self._i18n.t("btn_add", lang), callback_data="cmd:add")],
+            [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
+        ])
+        await self._safe_edit_message_text(
+            update.callback_query, text, reply_markup=keyboard, parse_mode="HTML"
+        )
+
+    # ------------------------------------------------------------------
+    # Notifications info
+    # ------------------------------------------------------------------
+
+    async def _send_notifications_info(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
+        title = self._i18n.t("help_notifications", lang)
+        body = self._i18n.t("help_notifications_body", lang)
+        text = f"<b>{formatter.esc(title)}</b>\n\n{body}"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
+        ])
+        await self._safe_edit_message_text(
+            update.callback_query, text, reply_markup=keyboard, parse_mode="HTML"
+        )
+
+    # ------------------------------------------------------------------
+    # Profile
+    # ------------------------------------------------------------------
+
+    async def _send_help_profile(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
         summary = self._service.get_user_profile_summary(chat_id)
         joined_at = summary.get("joined_at")
         if isinstance(joined_at, datetime):
@@ -96,7 +177,10 @@ class HelpHandler(BaseHandler):
 
         text = f"<b>{formatter.esc(self._i18n.t('help_profile', lang))}</b>\n\n"
         text += f"<b>{formatter.esc(self._i18n.t('label_chat_id', lang))}:</b> <code>{chat_id}</code>\n"
-        text += f"<b>{formatter.esc(self._i18n.t('label_language', lang))}:</b> <i>{formatter.esc(self._i18n.language_name(lang, lang))}</i>"
+        text += (
+            f"<b>{formatter.esc(self._i18n.t('label_language', lang))}:</b> "
+            f"<i>{formatter.esc(self._i18n.language_name(lang, lang))}</i>"
+        )
         text += "\n\n"
         text += f"📊 <b>{formatter.esc(self._i18n.t('profile_stats_title', lang))}</b>\n"
         text += f"💳 {formatter.esc(self._i18n.t('profile_credits', lang, value=summary.get('credits', 0)))}\n"
@@ -107,19 +191,18 @@ class HelpHandler(BaseHandler):
         text += f"❌ {formatter.esc(self._i18n.t('profile_failed_orders', lang, value=summary.get('failed_orders', 0)))}\n"
         text += f"🚚 {formatter.esc(self._i18n.t('profile_carriers_used', lang, value=summary.get('carriers_used', 0)))}"
 
-        keyboard = InlineKeyboardMarkup(
+        keyboard = InlineKeyboardMarkup([
             [
-                [
-                    InlineKeyboardButton(
-                        self._i18n.t("btn_add_credit", lang),
-                        callback_data="help:add_credit",
-                    )
-                ],
-                [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
-            ]
+                InlineKeyboardButton(
+                    self._i18n.t("btn_add_credit", lang),
+                    callback_data="help:add_credit",
+                )
+            ],
+            [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
+        ])
+        await self._safe_edit_message_text(
+            update.callback_query, text, reply_markup=keyboard, parse_mode="HTML"
         )
-
-        await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
 
     async def _send_add_credit_info(
         self,
@@ -136,43 +219,66 @@ class HelpHandler(BaseHandler):
             InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:profile")
         ]])
         await self._safe_edit_message_text(
-            update.callback_query,
-            text,
-            reply_markup=keyboard,
-            parse_mode="HTML",
+            update.callback_query, text, reply_markup=keyboard, parse_mode="HTML"
         )
 
-    async def _send_help_command(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
+    # ------------------------------------------------------------------
+    # Commands
+    # ------------------------------------------------------------------
+
+    async def _send_help_command(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
         text = f"<b>{formatter.esc(self._i18n.t('help_command', lang))}</b>\n\n"
-        text += f"🏠 <code>/start</code> - {formatter.esc(self._i18n.t('cmd_desc_start', lang))}\n"
-        text += f"📋 <code>/list</code> - {formatter.esc(self._i18n.t('cmd_desc_list', lang))}\n"
-        text += f"➕ <code>/add</code> - {formatter.esc(self._i18n.t('cmd_desc_add', lang))}\n"
-        text += f"🗑️ <code>/remove</code> - {formatter.esc(self._i18n.t('cmd_desc_remove', lang))}\n"
-        text += f"ℹ️ <code>/help</code> - {formatter.esc(self._i18n.t('cmd_desc_help', lang))}\n"
-        text += f"🌐 <code>/lang</code> - {formatter.esc(self._i18n.t('cmd_desc_lang', lang))}"
+        text += f"🏠 <code>/start</code> — {formatter.esc(self._i18n.t('cmd_desc_start', lang))}\n"
+        text += f"➕ <code>/add</code> — {formatter.esc(self._i18n.t('cmd_desc_add', lang))}\n"
+        text += f"📋 <code>/list</code> — {formatter.esc(self._i18n.t('cmd_desc_list', lang))}\n"
+        text += f"🗑️ <code>/remove</code> — {formatter.esc(self._i18n.t('cmd_desc_remove', lang))}\n"
+        text += f"ℹ️ <code>/help</code> — {formatter.esc(self._i18n.t('cmd_desc_help', lang))}\n"
+        text += f"🌐 <code>/lang</code> — {formatter.esc(self._i18n.t('cmd_desc_lang', lang))}"
 
-        keyboard = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
-            ]
+        # Show /admin only if the user is an admin
+        if self._service.is_admin(chat_id):
+            text += f"\n🛡️ <code>/admin</code> — {formatter.esc(self._i18n.t('cmd_desc_admin', lang))}"
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
+        ])
+        await self._safe_edit_message_text(
+            update.callback_query, text, reply_markup=keyboard, parse_mode="HTML"
         )
 
-        await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
+    # ------------------------------------------------------------------
+    # Language
+    # ------------------------------------------------------------------
 
-    async def _send_help_language(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
+    async def _send_help_language(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
         text = f"<b>{formatter.esc(self._i18n.t('help_language', lang))}</b>\n\n"
         text += f"<i>{formatter.esc(self._i18n.t('available_languages', lang))}</i>\n"
         for lang_code in self._i18n.supported_languages():
             text += f"🌍 {formatter.esc(self._i18n.language_name(lang_code, lang))}\n"
 
-        keyboard = InlineKeyboardMarkup(
-            [
-                self._build_language_buttons(lang),
-                [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
-            ]
+        keyboard = InlineKeyboardMarkup([
+            self._build_language_buttons(lang),
+            [InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="help:intro")],
+        ])
+        await self._safe_edit_message_text(
+            update.callback_query, text, reply_markup=keyboard, parse_mode="HTML"
         )
 
-        await self._safe_edit_message_text(update.callback_query, text, reply_markup=keyboard, parse_mode="HTML")
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     def _build_language_buttons(self, lang: str) -> list[InlineKeyboardButton]:
         return [

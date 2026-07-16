@@ -2,6 +2,11 @@
   "meta": {"name": "Tiếng Việt"},
   "messages": {
     "help_intro": "👋 Chào mừng bạn đến với bot theo dõi đơn hàng!",
+    "help_intro_body": "Bot giúp bạn theo dõi đơn hàng từ nhiều đơn vị vận chuyển tại một nơi — không cần vào từng website, không bỏ lỡ cập nhật quan trọng.\n\n<b>✨ Tính năng chính</b>\n• Thêm mã vận đơn và xem trạng thái ngay lập tức\n• Tự động kiểm tra và thông báo khi đơn có cập nhật mới\n• Xem toàn bộ lịch sử hành trình vận chuyển\n• Hỗ trợ nhiều hãng: JT Express, Shopee Express, GHN\n\n<b>🚀 Bắt đầu như thế nào?</b>\n1. Nhấn <b>➕ Thêm mới</b> → chọn hãng → dán mã vận đơn\n2. Hoặc chỉ cần gửi mã vận đơn trực tiếp vào chat — bot tự nhận dạng hãng\n3. Nhấn vào đơn hàng bất kỳ để xem chi tiết và lịch sử",
+    "help_how_to_add": "📬 Cách thêm đơn hàng",
+    "help_how_to_add_body": "<b>Cách 1 — Tự động nhận dạng</b>\nGửi mã vận đơn thẳng vào chat. Bot sẽ tự xác định hãng vận chuyển.\n\n<b>Cách 2 — Chọn hãng thủ công</b>\nNhấn <b>➕ Thêm mới</b>, chọn đơn vị vận chuyển, sau đó dán mã.\n\n<b>📦 Các hãng được hỗ trợ</b>\n• <b>JT Express</b> — mã bắt đầu bằng <code>JT</code> hoặc dãy số 10–15 chữ số\n• <b>Shopee Express</b> — mã bắt đầu bằng <code>SPX</code>, <code>SLS</code> hoặc <code>VN</code>\n• <b>GHN</b> — mã bắt đầu bằng <code>VNGH</code> hoặc 8 ký tự chữ-số\n\n<b>💳 Credit</b>\nMỗi lần thêm đơn mới tiêu tốn 1 credit. Thêm lại đơn cũ không mất credit.",
+    "help_notifications": "🔔 Thông báo",
+    "help_notifications_body": "Bot tự động kiểm tra đơn hàng đang theo dõi theo định kỳ. Khi trạng thái thay đổi, bạn sẽ nhận được thông báo ngay trong Telegram.\n\nBạn có thể <b>bật/tắt thông báo</b> từng đơn riêng lẻ bằng cách nhấn vào đơn hàng → nút 🔔/🔕.\n\nĐơn đã giao sẽ tự động dừng theo dõi.",
     "help_profile": "👤 Hồ sơ",
     "help_command": "📚 Lệnh",
     "help_language": "🌐 Ngôn ngữ",
@@ -48,6 +53,7 @@
     "cmd_desc_remove": "Xóa mã vận đơn",
     "cmd_desc_help": "Hiển thị trợ giúp",
     "cmd_desc_lang": "Đổi ngôn ngữ",
+    "cmd_desc_admin": "Bảng quản trị",
     "available_languages": "Ngôn ngữ khả dụng:",
     "tap_order_hint": "Nhấn vào một đơn hàng bên dưới để xem chi tiết.",
     "order_not_found": "Không tìm thấy đơn hàng",
@@ -104,7 +110,17 @@
     "jt_format_invalid": "Định dạng không đúng. Vui lòng nhập theo mẫu: mã vận đơn-4 số cuối SĐT",
     "btn_add_credit": "➕ Thêm credit",
     "add_credit_title": "💳 Thêm credit",
-    "add_credit_contact_owner": "Vui lòng liên hệ Bot Owner để được hỗ trợ thêm credit. Tính năng nạp credit tự động sẽ được cập nhật sau."
+    "add_credit_contact_owner": "Vui lòng liên hệ Bot Owner để được hỗ trợ thêm credit. Tính năng nạp credit tự động sẽ được cập nhật sau.",
+    "admin_ban_user": "🚫 Khóa tài khoản",
+    "admin_unban_user": "✅ Mở khóa tài khoản",
+    "admin_adjust_credits": "💳 Điều chỉnh credits",
+    "admin_credits_prompt": "💳 Điều chỉnh credits",
+    "admin_credits_current": "Số dư hiện tại: {value} credits",
+    "admin_credits_hint": "Gửi một số để cộng hoặc trừ credits.\nVí dụ: 50 (cộng 50), -20 (trừ 20)",
+    "admin_credits_updated": "✅ Đã cập nhật credits: {delta} → số dư: {balance}",
+    "admin_credits_invalid": "❌ Nhập không hợp lệ. Vui lòng gửi một số (ví dụ: 50 hoặc -20).",
+    "admin_view_user_orders": "📦 Xem đơn hàng",
+    "admin_user_orders_title": "📦 Đơn hàng của {name}"
   },
   "status": {
     "CREATED": "Đã tạo",

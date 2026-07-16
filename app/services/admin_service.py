@@ -112,6 +112,7 @@ class AdminService:
                 "display_name": user.display_name,
                 "credits": user.credits,
                 "is_admin": user.is_admin,
+                "is_banned": user.is_banned,
                 "created_at": user.created_at,
                 "order_count": total_orders,
                 "active_order_count": active_orders,
@@ -125,6 +126,55 @@ class AdminService:
             user.is_admin = not user.is_admin
             session.commit()
             return user.is_admin
+
+    def toggle_user_banned(self, user_id: int) -> bool | None:
+        with self._session_factory() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            user.is_banned = not user.is_banned
+            session.commit()
+            return user.is_banned
+
+    def adjust_user_credits(self, user_id: int, delta: int) -> int | None:
+        """Add or subtract credits. Returns new balance, or None if user not found."""
+        with self._session_factory() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                return None
+            user.credits = max(0, user.credits + delta)
+            session.commit()
+            return user.credits
+
+    def list_user_orders(
+        self, user_id: int, offset: int = 0, limit: int = 10
+    ) -> tuple[list[dict[str, object]], int]:
+        with self._session_factory() as session:
+            total = (
+                session.scalar(
+                    select(func.count(Tracking.id)).where(Tracking.user_id == user_id)
+                ) or 0
+            )
+            rows = session.execute(
+                select(Tracking, Carrier.name)
+                .join(Carrier, Tracking.carrier_id == Carrier.id)
+                .where(Tracking.user_id == user_id)
+                .order_by(Tracking.created_at.desc(), Tracking.id.desc())
+                .offset(offset)
+                .limit(limit)
+            ).all()
+            orders = [
+                {
+                    "id": tracking.id,
+                    "tracking_code": tracking.tracking_code,
+                    "status": tracking.last_status,
+                    "is_active": tracking.is_active,
+                    "carrier": carrier_name,
+                    "created_at": tracking.created_at,
+                }
+                for tracking, carrier_name in rows
+            ]
+            return orders, total
 
     # ------------------------------------------------------------------
     # Order management
