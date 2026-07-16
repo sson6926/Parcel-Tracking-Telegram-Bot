@@ -9,7 +9,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CallbackContext, ConversationHandler
 
 from app.constants.icons import TIMELINE_DESCRIPTION_MAX_LEN, TIMELINE_LOCATION_MAX_LEN
-from app.constants.user_state import ADD_WAITING_CARRIER, ADD_WAITING_CHAT_ID, WAITING_FOR_TRACKING_CODE
+from app.constants.user_state import ADD_WAITING_CARRIER, ADD_WAITING_CHAT_ID, ADD_WAITING_JT_PHONE, WAITING_FOR_TRACKING_CODE
 from app.handlers.base_handler import BaseHandler
 from app.utils import formatter
 
@@ -24,6 +24,7 @@ class TrackingHandler(BaseHandler):
     def _clear_add_tracking_context(self, context: CallbackContext) -> None:
         context.user_data.pop(ADD_WAITING_CARRIER, None)
         context.user_data.pop(ADD_WAITING_CHAT_ID, None)
+        context.user_data.pop(ADD_WAITING_JT_PHONE, None)
 
     def _build_add_tracking_result_text(
         self,
@@ -325,8 +326,68 @@ class TrackingHandler(BaseHandler):
 
         chat_id = update.effective_chat.id
         lang = self._get_user_lang(context)
-        tracking_code = update.message.text.strip()
+        user_input = update.message.text.strip()
         carrier = context.user_data.get(ADD_WAITING_CARRIER)
+
+        # Special handling for JT Express - check if waiting for phone digits
+        if context.user_data.get(ADD_WAITING_JT_PHONE):
+            # User is providing the 4-digit phone number
+            if not re.match(r'^\d{4}$', user_input):
+                await self._delete_message_quietly(update.message)
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"<b>{formatter.esc(self._i18n.t('jt_phone_invalid', lang))}</b>\n\n🔎 <i>{formatter.esc(self._i18n.t('example_label', lang))}:</i> <code>4128</code>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:add")]]),
+                    parse_mode="HTML",
+                )
+                return WAITING_FOR_TRACKING_CODE
+            
+            # Combine order code with phone digits
+            order_code = context.user_data[ADD_WAITING_JT_PHONE]
+            tracking_code = f"{order_code}-{user_input}"
+            text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
+            
+            self._clear_add_tracking_context(context)
+            await self._delete_message_quietly(update.message)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=self._build_main_keyboard(lang),
+                parse_mode="HTML",
+            )
+            return ConversationHandler.END
+
+        # Check if JT Express and missing phone digits
+        if carrier == "jtexpress":
+            # Check if user provided format: code-phone (e.g., "842608057049-4128")
+            if "-" in user_input:
+                parts = user_input.split("-")
+                if len(parts) == 2 and re.match(r'^\d{4}$', parts[1]):
+                    # Valid format, proceed
+                    tracking_code = user_input
+                else:
+                    # Invalid format
+                    await self._delete_message_quietly(update.message)
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"<b>{formatter.esc(self._i18n.t('jt_format_invalid', lang))}</b>\n\n🔎 <i>{formatter.esc(self._i18n.t('example_label', lang))}:</i> <code>842608057049-4128</code>",
+                        reply_markup=self._build_main_keyboard(lang),
+                        parse_mode="HTML",
+                    )
+                    return ConversationHandler.END
+            else:
+                # Only order code provided, ask for phone digits
+                context.user_data[ADD_WAITING_JT_PHONE] = user_input
+                await self._delete_message_quietly(update.message)
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"<b>{formatter.esc(self._i18n.t('jt_enter_phone', lang))}</b>\n\n🔎 <i>{formatter.esc(self._i18n.t('example_label', lang))}:</i> <code>4128</code>",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:add")]]),
+                    parse_mode="HTML",
+                )
+                return WAITING_FOR_TRACKING_CODE
+        else:
+            tracking_code = user_input
 
         text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
 
