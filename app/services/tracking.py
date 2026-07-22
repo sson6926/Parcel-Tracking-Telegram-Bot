@@ -162,8 +162,10 @@ class TrackingService:
             telegram_chat_id, tracking_code, carrier_code_override
         )
 
-    def list_trackings(self, telegram_chat_id: int) -> list[Tracking]:
-        return self._tracking_svc.list_trackings(telegram_chat_id)
+    def list_trackings(
+        self, telegram_chat_id: int, status_filter: str | None = None
+    ) -> list[Tracking]:
+        return self._tracking_svc.list_trackings(telegram_chat_id, status_filter)
 
     def get_tracking_detail(
         self, telegram_chat_id: int, tracking_id: int

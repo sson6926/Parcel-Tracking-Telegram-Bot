@@ -112,6 +112,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(tracking_handler.order_notification_callback, pattern="^order_notify:[0-9]+$"))
     application.add_handler(CallbackQueryHandler(tracking_handler.order_timeline_callback, pattern="^order_timeline:"))
     application.add_handler(CallbackQueryHandler(tracking_handler.remove_callback, pattern="^remove:"))
+    application.add_handler(CallbackQueryHandler(tracking_handler.filter_callback, pattern="^filter:"))
     application.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop"))
     application.add_handler(CallbackQueryHandler(admin_handler.admin_callback, pattern="^admin:"))
     application.add_handler(CallbackQueryHandler(start_handler.mission_callback, pattern="^info:mission$"))

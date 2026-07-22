@@ -77,6 +77,8 @@ class TrackingHandler(BaseHandler):
                 reply_markup=self._build_main_keyboard(lang),
                 parse_mode="HTML",
             )
+        elif data and data.startswith("filter:"):
+            await self._handle_filter_callback(chat_id, update, context, lang, data)
 
     async def list_command(self, update: Update, context: CallbackContext) -> None:
         chat_id = update.effective_chat.id
@@ -86,8 +88,27 @@ class TrackingHandler(BaseHandler):
             await self._delete_message_quietly(update.message)
         await self._show_order_list(chat_id, update, context, lang)
 
-    async def _show_order_list(self, chat_id: int, update: Update, context: CallbackContext, lang: str) -> None:
-        trackings = self._service.list_trackings(chat_id)
+    async def _show_order_list(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+        status_filter: str | None = None,
+    ) -> None:
+        trackings = self._service.list_trackings(chat_id, status_filter)
+
+        # Get all trackings for filter counts
+        all_trackings = self._service.list_trackings(chat_id)
+        active_count = len(
+            [t for t in all_trackings if t.is_active]
+        )
+        delivered_count = len(
+            [t for t in all_trackings if t.last_status == "DELIVERED"]
+        )
+        failed_count = len(
+            [t for t in all_trackings if t.last_status == "FAILED"]
+        )
 
         if not trackings:
             text = f"<b>{formatter.esc(self._i18n.t('list_empty', lang))}</b>"
@@ -97,7 +118,14 @@ class TrackingHandler(BaseHandler):
             await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
             return
 
-        text = f"<b>{formatter.esc(self._i18n.t('list_header', lang))}</b>\n\n"
+        # Build header with filter label if filtering
+        if status_filter:
+            filter_label = self._i18n.t(f"filter_label_{status_filter}", lang)
+            header = self._i18n.t("list_header_filtered", lang, filter=filter_label)
+        else:
+            header = self._i18n.t("list_header", lang)
+
+        text = f"<b>{formatter.esc(header)}</b>\n\n"
         text += f"<i>{formatter.esc(self._i18n.t('tap_order_hint', lang))}</i>"
         buttons = []
         for tracking in trackings:
@@ -113,10 +141,51 @@ class TrackingHandler(BaseHandler):
                 ]
             )
 
+        # Add filter buttons - each on its own row for better layout
+        buttons.append([InlineKeyboardButton(self._i18n.t("filter_all", lang), callback_data="filter:all")])
+        buttons.append([InlineKeyboardButton(
+            f"{self._i18n.t('filter_active', lang)} ({active_count})",
+            callback_data="filter:active",
+        )])
+        buttons.append([InlineKeyboardButton(
+            f"{self._i18n.t('filter_delivered', lang)} ({delivered_count})",
+            callback_data="filter:delivered",
+        )])
+        buttons.append([InlineKeyboardButton(
+            f"{self._i18n.t('filter_failed', lang)} ({failed_count})",
+            callback_data="filter:failed",
+        )])
         buttons.append([InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")])
         keyboard = InlineKeyboardMarkup(buttons)
 
         await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
+
+    async def _handle_filter_callback(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+        data: str,
+    ) -> None:
+        """Handle filter selection callback."""
+        filter_type = data.split(":")[-1]  # Extract filter type from callback data
+        
+        # Map filter type to status filter parameter
+        status_filter = None if filter_type == "all" else filter_type
+        
+        await self._show_order_list(chat_id, update, context, lang, status_filter)
+
+    async def filter_callback(self, update: Update, context: CallbackContext) -> None:
+        """Public callback handler for filter selection."""
+        query = update.callback_query
+        await query.answer()
+        
+        chat_id = query.message.chat_id
+        lang = self._get_user_lang(context)
+        data = query.data
+        
+        await self._handle_filter_callback(chat_id, update, context, lang, data)
 
     async def order_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
@@ -302,7 +371,7 @@ class TrackingHandler(BaseHandler):
         carrier = query.data.split(":")[-1]
 
         context.user_data[ADD_WAITING_CARRIER] = carrier
-        context.user_data[ADD_WAITING_CHAT_ID] = chat_id
+        conxt.user_data[ADD_WAITING_CHAT_ID] = chat_id
 
         text = self._i18n.t("add_enter_code", lang)
         keyboard = InlineKeyboardMarkup(

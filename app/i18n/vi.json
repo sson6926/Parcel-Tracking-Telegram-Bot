@@ -120,7 +120,16 @@
     "admin_credits_updated": "✅ Đã cập nhật credits: {delta} → số dư: {balance}",
     "admin_credits_invalid": "❌ Nhập không hợp lệ. Vui lòng gửi một số (ví dụ: 50 hoặc -20).",
     "admin_view_user_orders": "📦 Xem đơn hàng",
-    "admin_user_orders_title": "📦 Đơn hàng của {name}"
+    "admin_user_orders_title": "📦 Đơn hàng của {name}",
+    "filter_all": "📋 Tất cả",
+    "filter_active": "🔄 Đang theo dõi",
+    "filter_delivered": "✅ Đã giao",
+    "filter_failed": "❌ Thất bại",
+    "list_header_filtered": "📋 Danh sách đơn hàng ({filter}):",
+    "filter_label_all": "tất cả",
+    "filter_label_active": "đang theo dõi",
+    "filter_label_delivered": "đã giao",
+    "filter_label_failed": "thất bại"
   },
   "status": {
     "CREATED": "Đã tạo",

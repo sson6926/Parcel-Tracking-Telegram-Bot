@@ -120,7 +120,16 @@
     "admin_credits_updated": "✅ Credits updated: {delta} → balance: {balance}",
     "admin_credits_invalid": "❌ Invalid input. Please send a number (e.g. 50 or -20).",
     "admin_view_user_orders": "📦 View orders",
-    "admin_user_orders_title": "📦 Orders of {name}"
+    "admin_user_orders_title": "📦 Orders of {name}",
+    "filter_all": "📋 All",
+    "filter_active": "🔄 Active",
+    "filter_delivered": "✅ Delivered",
+    "filter_failed": "❌ Failed",
+    "list_header_filtered": "📋 Your orders ({filter}):",
+    "filter_label_all": "all",
+    "filter_label_active": "active",
+    "filter_label_delivered": "delivered",
+    "filter_label_failed": "failed"
   },
   "status": {
     "CREATED": "Created",
