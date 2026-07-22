@@ -4,3 +4,16 @@ services:
       context: .
       dockerfile: Dockerfile
     image: parcel-tracking-bot:dev
+    container_name: tracking-bot-dev
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: 'Asia/Ho_Chi_Minh'
+    ports:
+      - "${WEBHOOK_PORT:-8443}:${WEBHOOK_PORT:-8443}"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

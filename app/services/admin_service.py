@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Callable
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.constants.enums import TrackingStatus
@@ -23,25 +23,29 @@ class AdminService:
 
     def get_dashboard_stats(self) -> dict[str, int]:
         with self._session_factory() as session:
+            user_row = session.execute(
+                select(
+                    func.count(User.id),
+                    func.sum(case((User.is_admin.is_(True), 1), else_=0)),
+                )
+            ).one()
+
+            tracking_row = session.execute(
+                select(
+                    func.count(Tracking.id),
+                    func.sum(case((Tracking.is_active.is_(True), 1), else_=0)),
+                    func.sum(case((Tracking.last_status == TrackingStatus.DELIVERED.value, 1), else_=0)),
+                    func.sum(case((Tracking.last_status == TrackingStatus.FAILED.value, 1), else_=0)),
+                )
+            ).one()
+
             return {
-                "users": session.scalar(select(func.count(User.id))) or 0,
-                "admins": session.scalar(
-                    select(func.count(User.id)).where(User.is_admin.is_(True))
-                ) or 0,
-                "orders": session.scalar(select(func.count(Tracking.id))) or 0,
-                "active_orders": session.scalar(
-                    select(func.count(Tracking.id)).where(Tracking.is_active.is_(True))
-                ) or 0,
-                "delivered_orders": session.scalar(
-                    select(func.count(Tracking.id)).where(
-                        Tracking.last_status == TrackingStatus.DELIVERED.value
-                    )
-                ) or 0,
-                "failed_orders": session.scalar(
-                    select(func.count(Tracking.id)).where(
-                        Tracking.last_status == TrackingStatus.FAILED.value
-                    )
-                ) or 0,
+                "users":           int(user_row[0] or 0),
+                "admins":          int(user_row[1] or 0),
+                "orders":          int(tracking_row[0] or 0),
+                "active_orders":   int(tracking_row[1] or 0),
+                "delivered_orders":int(tracking_row[2] or 0),
+                "failed_orders":   int(tracking_row[3] or 0),
             }
 
     # ------------------------------------------------------------------
