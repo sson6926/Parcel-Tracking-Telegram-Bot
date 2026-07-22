@@ -1,0 +1,6 @@
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: parcel-tracking-bot:dev

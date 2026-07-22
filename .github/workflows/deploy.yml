@@ -74,19 +74,21 @@ jobs:
           script: |
             set -e
             
-            # Navigate to project directory
+            IMAGE="${{ steps.image.outputs.name }}:main"
+            
+            # Pull latest image
+            docker pull "$IMAGE"
+            
+            # Update compose file to use the exact image
             cd ${{ secrets.PROJECT_PATH }}
             
-            # Pull latest image from GitHub Container Registry
-            docker pull ${{ steps.image.outputs.name }}:main
-            
-            # Stop and remove old container
+            # Stop old container
             docker compose down || true
             
-            # Start new container with .env from server
-            docker compose up -d
+            # Start with new image
+            IMAGE_TAG="$IMAGE" docker compose up -d
             
-            # Clean up
-            docker logout ghcr.io
+            # Clean up unused images
+            docker image prune -f
             
             echo "✅ Deployment completed successfully"

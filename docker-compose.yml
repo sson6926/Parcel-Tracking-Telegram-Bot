@@ -1,8 +1,6 @@
 services:
   bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/sson6926/parcel-tracking-telegram-bot:main
     container_name: tracking-bot
     restart: unless-stopped
     env_file:
