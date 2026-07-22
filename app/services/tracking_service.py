@@ -219,24 +219,47 @@ class TrackingService:
             )
             return tracking
 
-    def list_trackings(self, telegram_chat_id: int) -> list[Tracking]:
+    def list_trackings(
+        self, telegram_chat_id: int, status_filter: str | None = None
+    ) -> list[Tracking]:
+        """
+        List trackings for a user with optional status filter.
+
+        Args:
+            telegram_chat_id: User's Telegram chat ID
+            status_filter: Optional filter - 'active', 'delivered', 'failed', or None for all
+        """
         with self._session_factory() as session:
             user = session.scalar(
                 select(User).where(User.telegram_chat_id == telegram_chat_id)
             )
             if user is None:
                 return []
-            return list(
-                session.scalars(
-                    select(Tracking)
-                    .options(joinedload(Tracking.carrier))
-                    .where(
-                        Tracking.user_id == user.id,
-                        Tracking.is_deleted.is_(False),
-                    )
-                    .order_by(Tracking.created_at.desc())
-                ).all()
+
+            query = (
+                select(Tracking)
+                .options(joinedload(Tracking.carrier))
+                .where(
+                    Tracking.user_id == user.id,
+                    Tracking.is_deleted.is_(False),
+                )
             )
+
+            # Apply status filter
+            if status_filter == "active":
+                # Active orders: is_active=True (being monitored)
+                query = query.where(Tracking.is_active.is_(True))
+            elif status_filter == "delivered":
+                # Delivered orders
+                query = query.where(
+                    Tracking.last_status == TrackingStatus.DELIVERED.value
+                )
+            elif status_filter == "failed":
+                # Failed orders
+                query = query.where(Tracking.last_status == TrackingStatus.FAILED.value)
+
+            query = query.order_by(Tracking.created_at.desc())
+            return list(session.scalars(query).all())
 
     def get_tracking_detail(
         self, telegram_chat_id: int, tracking_id: int
