@@ -141,20 +141,13 @@ class TrackingHandler(BaseHandler):
                 ]
             )
 
-        # Add filter buttons - each on its own row for better layout
-        buttons.append([InlineKeyboardButton(self._i18n.t("filter_all", lang), callback_data="filter:all")])
-        buttons.append([InlineKeyboardButton(
-            f"{self._i18n.t('filter_active', lang)} ({active_count})",
-            callback_data="filter:active",
-        )])
-        buttons.append([InlineKeyboardButton(
-            f"{self._i18n.t('filter_delivered', lang)} ({delivered_count})",
-            callback_data="filter:delivered",
-        )])
-        buttons.append([InlineKeyboardButton(
-            f"{self._i18n.t('filter_failed', lang)} ({failed_count})",
-            callback_data="filter:failed",
-        )])
+        # Filter buttons — 1 row, icon + count only
+        buttons.append([
+            InlineKeyboardButton(f"📋 {len(all_trackings)}", callback_data="filter:all"),
+            InlineKeyboardButton(f"🔔 {active_count}",       callback_data="filter:active"),
+            InlineKeyboardButton(f"✅ {delivered_count}",    callback_data="filter:delivered"),
+            InlineKeyboardButton(f"❌ {failed_count}",       callback_data="filter:failed"),
+        ])
         buttons.append([InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data="cmd:menu")])
         keyboard = InlineKeyboardMarkup(buttons)
 
