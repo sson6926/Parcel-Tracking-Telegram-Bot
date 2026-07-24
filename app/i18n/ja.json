@@ -30,6 +30,8 @@
     "add_error_empty": "❌ 追跡番号を入力してください",
     "add_error_unsupported": "❌ サポートされていない追跡番号形式です",
     "add_error_duplicate": "❌ この注文は既に存在します",
+    "adding_order": "⏳ 注文を追加しています。しばらくお待ちください...",
+    "loading_orders": "⏳ 注文を読み込んでいます...",
     "list_empty": "📭 まだ注文がありません",
     "list_header": "📋 あなたの注文:",
     "detail_code": "追跡番号: {code}",

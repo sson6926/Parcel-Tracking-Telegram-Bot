@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import CallbackContext, ConversationHandler
 
 from app.constants.icons import TIMELINE_DESCRIPTION_MAX_LEN, TIMELINE_LOCATION_MAX_LEN
@@ -54,6 +55,37 @@ class TrackingHandler(BaseHandler):
             )
             return f"<b>{formatter.esc(msg)}</b>"
 
+    async def _send_add_result_with_loading(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+        tracking_code: str,
+        carrier_code: str | None,
+    ) -> None:
+        """Send an immediate loading message, then edit it with the add result."""
+        await self._delete_message_quietly(update.message)
+        loading_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"<b>{formatter.esc(self._i18n.t('adding_order', lang))}</b>",
+            parse_mode="HTML",
+        )
+        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier_code)
+        try:
+            await loading_msg.edit_text(
+                text,
+                reply_markup=self._build_main_keyboard(lang),
+                parse_mode="HTML",
+            )
+        except BadRequest:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                reply_markup=self._build_main_keyboard(lang),
+                parse_mode="HTML",
+            )
+
     async def cmd_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
         await query.answer()
@@ -96,6 +128,14 @@ class TrackingHandler(BaseHandler):
         lang: str,
         status_filter: str | None = None,
     ) -> None:
+        if update.callback_query is not None:
+            try:
+                await update.callback_query.edit_message_text(
+                    f"<b>{formatter.esc(self._i18n.t('loading_orders', lang))}</b>",
+                    parse_mode="HTML",
+                )
+            except BadRequest:
+                pass
         trackings = self._service.list_trackings(chat_id, status_filter)
 
         # Get all trackings for filter counts
@@ -407,15 +447,10 @@ class TrackingHandler(BaseHandler):
             # Combine order code with phone digits
             order_code = context.user_data[ADD_WAITING_JT_PHONE]
             tracking_code = f"{order_code}-{user_input}"
-            text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
             
             self._clear_add_tracking_context(context)
-            await self._delete_message_quietly(update.message)
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                reply_markup=self._build_main_keyboard(lang),
-                parse_mode="HTML",
+            await self._send_add_result_with_loading(
+                chat_id, update, context, lang, tracking_code, carrier
             )
             return ConversationHandler.END
 
@@ -451,15 +486,9 @@ class TrackingHandler(BaseHandler):
         else:
             tracking_code = user_input
 
-        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
-
         self._clear_add_tracking_context(context)
-        await self._delete_message_quietly(update.message)
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=self._build_main_keyboard(lang),
-            parse_mode="HTML",
+        await self._send_add_result_with_loading(
+            chat_id, update, context, lang, tracking_code, carrier
         )
 
         return ConversationHandler.END
@@ -482,14 +511,8 @@ class TrackingHandler(BaseHandler):
         lang = self._get_user_lang(context)
         tracking_code = match.group(1).upper()
 
-        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, "shopeeexpress")
-        await self._delete_message_quietly(update.message)
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=self._build_main_keyboard(lang),
-            parse_mode="HTML",
+        await self._send_add_result_with_loading(
+            chat_id, update, context, lang, tracking_code, "shopeeexpress"
         )
 
     async def auto_add_from_message(self, update: Update, context: CallbackContext) -> None:
@@ -516,14 +539,8 @@ class TrackingHandler(BaseHandler):
             return  # Not a recognized tracking code
 
         tracking_code = raw_text.upper()
-        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier)
-        await self._delete_message_quietly(update.message)
-
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=text,
-            reply_markup=self._build_main_keyboard(lang),
-            parse_mode="HTML",
+        await self._send_add_result_with_loading(
+            chat_id, update, context, lang, tracking_code, carrier
         )
 
     async def remove_command(self, update: Update, context: CallbackContext) -> None:

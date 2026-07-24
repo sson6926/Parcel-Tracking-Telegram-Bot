@@ -35,6 +35,8 @@
     "add_error_empty": "❌ Tracking code cannot be empty",
     "add_error_unsupported": "❌ Unsupported tracking code format",
     "add_error_duplicate": "❌ This order already exists",
+    "adding_order": "⏳ Adding your order, please wait...",
+    "loading_orders": "⏳ Loading orders...",
     "list_empty": "📭 No orders added yet",
     "list_header": "📋 Your orders:",
     "detail_code": "Tracking Code: {code}",

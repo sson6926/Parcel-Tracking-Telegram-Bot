@@ -35,6 +35,8 @@
     "add_error_empty": "❌ Mã vận đơn không được để trống",
     "add_error_unsupported": "❌ Không hỗ trợ loại mã vận đơn này",
     "add_error_duplicate": "❌ Đơn hàng này đã tồn tại",
+    "adding_order": "⏳ Đang thêm đơn hàng, vui lòng đợi...",
+    "loading_orders": "⏳ Đang tải đơn hàng...",
     "list_empty": "📭 Bạn chưa thêm đơn hàng nào",
     "list_header": "📋 Danh sách đơn hàng của bạn:",
     "detail_code": "Mã vận đơn: {code}",
