@@ -364,7 +364,7 @@ class TrackingHandler(BaseHandler):
         carrier = query.data.split(":")[-1]
 
         context.user_data[ADD_WAITING_CARRIER] = carrier
-        conxt.user_data[ADD_WAITING_CHAT_ID] = chat_id
+        context.user_data[ADD_WAITING_CHAT_ID] = chat_id
 
         text = self._i18n.t("add_enter_code", lang)
         keyboard = InlineKeyboardMarkup(
