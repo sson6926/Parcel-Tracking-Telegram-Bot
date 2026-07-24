@@ -530,11 +530,25 @@ class TrackingHandler(BaseHandler):
         chat_id = update.effective_chat.id
         lang = self._get_user_lang(context)
 
+        if update.message is not None:
+            await self._delete_message_quietly(update.message)
+        await self._show_remove_list(chat_id, update, context, lang)
+
+    async def _show_remove_list(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
         trackings = self._service.list_trackings(chat_id)
 
         if not trackings:
-            text = f"<b>{formatter.esc(self._i18n.t('list_empty', lang))}</b>"
-            await update.message.reply_text(text, parse_mode="HTML")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"<b>{formatter.esc(self._i18n.t('list_empty', lang))}</b>",
+                parse_mode="HTML",
+            )
             return
 
         buttons = []
@@ -549,7 +563,6 @@ class TrackingHandler(BaseHandler):
             )
 
         keyboard = InlineKeyboardMarkup(buttons)
-        await update.message.delete()
         await context.bot.send_message(
             chat_id=chat_id,
             text=f"<b>{formatter.esc(self._i18n.t('remove_select_prompt', lang))}</b>",

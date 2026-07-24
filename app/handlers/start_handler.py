@@ -22,8 +22,16 @@ class StartHandler(BaseHandler):
         context.user_data.setdefault("language", "vi")
 
         lang = self._get_user_lang(context)
+        # 1) Welcome text + persistent command bar (bottom reply keyboard)
         await update.message.reply_text(
             f"<b>{formatter.esc(self._i18n.t('help_intro', lang))}</b>",
+            reply_markup=self._build_command_keyboard(lang),
+            parse_mode="HTML",
+        )
+        # 2) Inline main menu for rich navigation
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"<i>{formatter.esc(self._i18n.t('tap_order_hint', lang))}</i>",
             reply_markup=self._build_main_keyboard(lang),
             parse_mode="HTML",
         )

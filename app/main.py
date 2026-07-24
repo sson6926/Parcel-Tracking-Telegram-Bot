@@ -10,6 +10,7 @@ import sentry_sdk
 from telegram import Update
 from telegram.ext import (
     Application,
+    ApplicationHandlerStop,
     CallbackContext,
     CallbackQueryHandler,
     CommandHandler,
@@ -92,6 +93,45 @@ def main() -> None:
     lang_handler = LanguageHandler(i18n, tracking_service)
     tracking_handler = TrackingHandler(i18n, tracking_service)
     admin_handler = AdminHandler(i18n, tracking_service)
+
+    # --- Persistent reply-keyboard (bottom bar) label router ---------------
+    # The bottom bar buttons show localized "text + icon" labels. Tapping one
+    # sends that label as a message; this router intercepts the exact label,
+    # deletes the sent message (so nothing lingers) and runs the action.
+    menu_action_by_label: dict[str, str] = {}
+    for _lang in i18n.supported_languages():
+        menu_action_by_label[i18n.t("btn_add", _lang)] = "add"
+        menu_action_by_label[i18n.t("btn_list", _lang)] = "list"
+        menu_action_by_label[i18n.t("btn_remove", _lang)] = "remove"
+        menu_action_by_label[i18n.t("btn_help", _lang)] = "help"
+        menu_action_by_label[i18n.t("btn_language", _lang)] = "lang"
+
+    async def menu_button_router(update: Update, context: CallbackContext) -> None:
+        if update.message is None or not update.message.text:
+            return
+        action = menu_action_by_label.get(update.message.text.strip())
+        if action is None:
+            return
+        chat_id = update.effective_chat.id
+        lang = tracking_handler._get_user_lang(context)
+        await tracking_handler._delete_message_quietly(update.message)
+        if action == "add":
+            await tracking_handler._show_add_carrier_selection(chat_id, update, context, lang)
+        elif action == "list":
+            await tracking_handler._show_order_list(chat_id, update, context, lang)
+        elif action == "remove":
+            await tracking_handler._show_remove_list(chat_id, update, context, lang)
+        elif action == "help":
+            await help_handler._send_help_intro(chat_id, update, context, lang)
+        elif action == "lang":
+            await lang_handler.show_language_menu(chat_id, update, context, lang)
+        # Stop further handlers (broadcast/conversation/auto-add) from reacting.
+        raise ApplicationHandlerStop
+
+    application.add_handler(
+        MessageHandler(filters.Text(set(menu_action_by_label.keys())), menu_button_router),
+        group=-2,
+    )
     
     application.add_handler(CommandHandler("start", start_handler.start_command))
     application.add_handler(CommandHandler("help", help_handler.help_command))

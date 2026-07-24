@@ -21,6 +21,22 @@ class LanguageHandler(BaseHandler):
             parse_mode="HTML",
         )
 
+    async def show_language_menu(
+        self,
+        chat_id: int,
+        update: Update,
+        context: CallbackContext,
+        lang: str,
+    ) -> None:
+        """Send the language menu via bot (no reliance on update.message)."""
+        keyboard = InlineKeyboardMarkup([self._build_language_buttons(lang)])
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"<b>{formatter.esc(self._i18n.t('help_language', lang))}</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+
     async def lang_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
         await query.answer()

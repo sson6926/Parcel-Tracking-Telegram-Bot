@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import logging
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    Update,
+)
 from telegram.error import BadRequest
 from telegram.ext import CallbackContext
 
@@ -52,23 +58,46 @@ class BaseHandler:
                 return
             raise
 
+    def _build_command_keyboard(self, lang: str) -> ReplyKeyboardMarkup:
+        """Persistent reply keyboard with frequently used actions (bottom bar).
+
+        Buttons show localized text + icon. Tapping sends the label text, which
+        the menu router intercepts, deletes, and turns into the matching action
+        so no command/message lingers in the chat.
+        """
+        return ReplyKeyboardMarkup(
+            [
+                [
+                    KeyboardButton(self._i18n.t("btn_add", lang)),
+                    KeyboardButton(self._i18n.t("btn_list", lang)),
+                ],
+                [
+                    KeyboardButton(self._i18n.t("btn_remove", lang)),
+                    KeyboardButton(self._i18n.t("btn_help", lang)),
+                ],
+                [KeyboardButton(self._i18n.t("btn_language", lang))],
+            ],
+            resize_keyboard=True,
+            is_persistent=True,
+        )
+
     def _build_main_keyboard(self, lang: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
             [
                 [
                     InlineKeyboardButton(
-                        self._i18n.t("btn_list", lang),
-                        callback_data="cmd:list",
-                    ),
-                    InlineKeyboardButton(
                         self._i18n.t("btn_add", lang),
                         callback_data="cmd:add",
+                    ),
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_list", lang),
+                        callback_data="cmd:list",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
-                        self._i18n.t("btn_help", lang),
-                        callback_data="help:intro",
+                        self._i18n.t("btn_profile", lang),
+                        callback_data="help:profile",
                     ),
                     InlineKeyboardButton(
                         self._i18n.t("btn_language", lang),
@@ -76,6 +105,10 @@ class BaseHandler:
                     ),
                 ],
                 [
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_help", lang),
+                        callback_data="help:intro",
+                    ),
                     InlineKeyboardButton(
                         self._i18n.t("btn_mission", lang),
                         callback_data="info:mission",
