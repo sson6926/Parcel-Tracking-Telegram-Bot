@@ -72,19 +72,60 @@ class TrackingHandler(BaseHandler):
             parse_mode="HTML",
         )
         text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier_code)
+        
+        # Build keyboard with [Details] and [Home] buttons
+        keyboard = self._build_add_result_keyboard(chat_id, lang, tracking_code)
+        
         try:
             await loading_msg.edit_text(
                 text,
-                reply_markup=self._build_main_keyboard(lang),
+                reply_markup=keyboard,
                 parse_mode="HTML",
             )
         except BadRequest:
             await context.bot.send_message(
                 chat_id=chat_id,
                 text=text,
-                reply_markup=self._build_main_keyboard(lang),
+                reply_markup=keyboard,
                 parse_mode="HTML",
             )
+
+    def _build_add_result_keyboard(
+        self,
+        chat_id: int,
+        lang: str,
+        tracking_code: str,
+    ) -> InlineKeyboardMarkup:
+        """Build keyboard for add result with [Details] and [Home] buttons."""
+        # Get the tracking to retrieve its ID for the Details button
+        trackings = self._service.list_trackings(chat_id)
+        tracking_id = None
+        for t in trackings:
+            if t.tracking_code == tracking_code:
+                tracking_id = t.id
+                break
+        
+        buttons = []
+        if tracking_id:
+            buttons.append([
+                InlineKeyboardButton(
+                    self._i18n.t("btn_detail", lang),
+                    callback_data=f"order:{tracking_id}",
+                ),
+                InlineKeyboardButton(
+                    self._i18n.t("btn_home", lang),
+                    callback_data="cmd:menu",
+                ),
+            ])
+        else:
+            buttons.append([
+                InlineKeyboardButton(
+                    self._i18n.t("btn_home", lang),
+                    callback_data="cmd:menu",
+                ),
+            ])
+        
+        return InlineKeyboardMarkup(buttons)
 
     async def cmd_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
