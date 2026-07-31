@@ -37,6 +37,7 @@ from app.database import create_session_factory, init_db
 from app.handlers import AdminHandler, StartHandler, HelpHandler, LanguageHandler, TrackingHandler
 from app.scheduler.tracking import TrackingScheduler
 from app.services.tracking import TrackingService
+from app.utils.chat_action import with_typing_action
 
 logger = logging.getLogger(__name__)
 
@@ -129,48 +130,65 @@ def main() -> None:
         raise ApplicationHandlerStop
 
     application.add_handler(
-        MessageHandler(filters.Text(set(menu_action_by_label.keys())), menu_button_router),
+        MessageHandler(
+            filters.Text(set(menu_action_by_label.keys())),
+            with_typing_action(menu_button_router),
+        ),
         group=-2,
     )
     
-    application.add_handler(CommandHandler("start", start_handler.start_command))
-    application.add_handler(CommandHandler("help", help_handler.help_command))
-    application.add_handler(CommandHandler("list", tracking_handler.list_command))
-    application.add_handler(CommandHandler("remove", tracking_handler.remove_command))
-    application.add_handler(CommandHandler("lang", lang_handler.lang_command))
-    application.add_handler(CommandHandler("admin", admin_handler.admin_command))
+    application.add_handler(CommandHandler("start", with_typing_action(start_handler.start_command)))
+    application.add_handler(CommandHandler("help", with_typing_action(help_handler.help_command)))
+    application.add_handler(CommandHandler("list", with_typing_action(tracking_handler.list_command)))
+    application.add_handler(CommandHandler("remove", with_typing_action(tracking_handler.remove_command)))
+    application.add_handler(CommandHandler("lang", with_typing_action(lang_handler.lang_command)))
+    application.add_handler(CommandHandler("admin", with_typing_action(admin_handler.admin_command)))
     
     application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, admin_handler.broadcast_message),
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            with_typing_action(admin_handler.broadcast_message),
+        ),
         group=-1,
     )
     
-    application.add_handler(CallbackQueryHandler(help_handler.help_callback, pattern="^help:"))
-    application.add_handler(CallbackQueryHandler(lang_handler.lang_callback, pattern="^lang:"))
-    application.add_handler(CallbackQueryHandler(tracking_handler.cmd_callback, pattern="^cmd:"))
-    application.add_handler(CallbackQueryHandler(tracking_handler.order_callback, pattern="^order:[0-9]+$"))
-    application.add_handler(CallbackQueryHandler(tracking_handler.order_notification_callback, pattern="^order_notify:[0-9]+$"))
-    application.add_handler(CallbackQueryHandler(tracking_handler.order_timeline_callback, pattern="^order_timeline:"))
-    application.add_handler(CallbackQueryHandler(tracking_handler.remove_callback, pattern="^remove:"))
-    application.add_handler(CallbackQueryHandler(tracking_handler.filter_callback, pattern="^filter:"))
-    application.add_handler(CallbackQueryHandler(noop_callback, pattern="^noop"))
-    application.add_handler(CallbackQueryHandler(admin_handler.admin_callback, pattern="^admin:"))
-    application.add_handler(CallbackQueryHandler(start_handler.mission_callback, pattern="^info:mission$"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(help_handler.help_callback), pattern="^help:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(lang_handler.lang_callback), pattern="^lang:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.cmd_callback), pattern="^cmd:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_callback), pattern="^order:[0-9]+$"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_notification_callback), pattern="^order_notify:[0-9]+$"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_timeline_callback), pattern="^order_timeline:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.remove_callback), pattern="^remove:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.filter_callback), pattern="^filter:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(noop_callback), pattern="^noop"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(admin_handler.admin_callback), pattern="^admin:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(start_handler.mission_callback), pattern="^info:mission$"))
     
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=PTBUserWarning)
         conv_handler = ConversationHandler(
             entry_points=[
-                CommandHandler("add", tracking_handler.add_command),
-                CallbackQueryHandler(tracking_handler.add_carrier_callback, pattern="^add_carrier:"),
+                CommandHandler("add", with_typing_action(tracking_handler.add_command)),
+                CallbackQueryHandler(
+                    with_typing_action(tracking_handler.add_carrier_callback),
+                    pattern="^add_carrier:",
+                ),
             ],
             states={
                 1: [
-                    CallbackQueryHandler(tracking_handler.add_carrier_callback, pattern="^add_carrier:"),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, tracking_handler.add_tracking_message),
+                    CallbackQueryHandler(
+                        with_typing_action(tracking_handler.add_carrier_callback),
+                        pattern="^add_carrier:",
+                    ),
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        with_typing_action(tracking_handler.add_tracking_message),
+                    ),
                 ],
             },
-            fallbacks=[CommandHandler("start", start_handler.start_command)],
+            fallbacks=[
+                CommandHandler("start", with_typing_action(start_handler.start_command))
+            ],
             per_message=False,
         )
     application.add_handler(conv_handler)
@@ -179,7 +197,7 @@ def main() -> None:
     application.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            tracking_handler.auto_add_from_message,
+            with_typing_action(tracking_handler.auto_add_from_message),
         )
     )
     
