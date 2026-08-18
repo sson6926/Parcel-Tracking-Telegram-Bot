@@ -102,7 +102,12 @@
     "admin_broadcast_result": "送信済み: {sent} · 失敗: {failed}",
     "btn_add_credit": "➕ クレジットを追加",
     "add_credit_title": "💳 クレジットを追加",
-    "add_credit_contact_owner": "クレジットの追加についてはBot Ownerにお問い合わせください。自動チャージ機能は後日追加予定です。"
+    "add_credit_contact_owner": "クレジットの追加についてはBot Ownerにお問い合わせください。自動チャージ機能は後日追加予定です。",
+    "admin_send_message": "✉️ メッセージを送信",
+    "admin_message_prompt": "{name} に次のメッセージを送信します。テキスト、画像、動画、ファイル、音声、スタンプ、キャプションに対応しています。",
+    "admin_message_cancel": "❌ 送信をキャンセル",
+    "admin_message_sent": "✅ メッセージを送信しました。",
+    "admin_message_failed": "❌ メッセージを送信できませんでした。ユーザーがBotをブロックしている可能性があります。"
   },
   "status": {
     "CREATED": "作成済み",

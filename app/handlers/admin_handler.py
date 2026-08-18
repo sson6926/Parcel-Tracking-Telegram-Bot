@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 PAGE_SIZE = 10
 BROADCAST_WAITING_KEY = "admin_broadcast_waiting"
 CREDITS_WAITING_KEY = "admin_credits_waiting"  # {"user_id": int, "page": int}
+DIRECT_MESSAGE_WAITING_KEY = "admin_direct_message_waiting"  # {"user_id": int, "page": int}
 
 
 class AdminHandler(BaseHandler):
@@ -54,6 +55,7 @@ class AdminHandler(BaseHandler):
         if action in {"home", "refresh"}:
             context.user_data.pop(BROADCAST_WAITING_KEY, None)
             context.user_data.pop(CREDITS_WAITING_KEY, None)
+            context.user_data.pop(DIRECT_MESSAGE_WAITING_KEY, None)
             await self._show_dashboard(update, context)
 
         elif action == "broadcast":
@@ -95,6 +97,19 @@ class AdminHandler(BaseHandler):
             user_id, page = int(parts[2]), int(parts[3])
             await self._show_user(update, context, user_id, page)
 
+        elif action == "message_prompt":
+            user_id, page = int(parts[2]), int(parts[3])
+            context.user_data[DIRECT_MESSAGE_WAITING_KEY] = {
+                "user_id": user_id,
+                "page": page,
+            }
+            await self._show_direct_message_prompt(update, context, user_id, page)
+
+        elif action == "message_cancel":
+            context.user_data.pop(DIRECT_MESSAGE_WAITING_KEY, None)
+            user_id, page = int(parts[2]), int(parts[3])
+            await self._show_user(update, context, user_id, page)
+
         elif action == "user_orders":
             user_id = int(parts[2])
             page = int(parts[3]) if len(parts) > 3 else 0
@@ -114,7 +129,7 @@ class AdminHandler(BaseHandler):
             await self._show_order(update, context, order_id, page)
 
     # ------------------------------------------------------------------
-    # Text message handler (broadcast / credits input)
+    # Message handler (broadcast / credits / direct message input)
     # ------------------------------------------------------------------
 
     async def broadcast_message(self, update: Update, context: CallbackContext) -> None:
@@ -149,6 +164,39 @@ class AdminHandler(BaseHandler):
                 parse_mode="HTML",
             )
             await self._delete_message_quietly(update.message)
+            raise ApplicationHandlerStop
+
+        # Message to one specific user. copy() preserves text, caption and media.
+        if context.user_data.get(DIRECT_MESSAGE_WAITING_KEY):
+            if update.message is None:
+                return
+            if not self._service.is_admin(chat_id):
+                context.user_data.pop(DIRECT_MESSAGE_WAITING_KEY, None)
+                await update.message.reply_text(self._i18n.t("admin_forbidden", lang))
+                raise ApplicationHandlerStop
+
+            payload = context.user_data.pop(DIRECT_MESSAGE_WAITING_KEY)
+            user_id, page = payload["user_id"], payload["page"]
+            user = self._service.admin_get_user(user_id)
+            sent = False
+            if user is not None:
+                try:
+                    await update.message.copy(chat_id=user["chat_id"])
+                    sent = True
+                except TelegramError:
+                    logger.exception("Failed to send an admin message to user %s", user_id)
+
+            result_key = "admin_message_sent" if sent else "admin_message_failed"
+            await update.message.reply_text(
+                f"<b>{formatter.esc(self._i18n.t(result_key, lang))}</b>",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        self._i18n.t("btn_back", lang),
+                        callback_data=f"admin:user:{user_id}:{page}",
+                    )
+                ]]),
+                parse_mode="HTML",
+            )
             raise ApplicationHandlerStop
 
         # Broadcast input
@@ -308,6 +356,12 @@ class AdminHandler(BaseHandler):
             callback_data=f"admin:credits_prompt:{user_id}:{page}",
         )])
 
+        # Direct text/media message
+        buttons.append([InlineKeyboardButton(
+            self._i18n.t("admin_send_message", lang),
+            callback_data=f"admin:message_prompt:{user_id}:{page}",
+        )])
+
         # View user's orders
         buttons.append([InlineKeyboardButton(
             self._i18n.t("admin_view_user_orders", lang),
@@ -349,6 +403,34 @@ class AdminHandler(BaseHandler):
             )
         ]])
         await self._safe_edit_message_text(update.callback_query, text, keyboard, "HTML")
+
+    async def _show_direct_message_prompt(
+        self,
+        update: Update,
+        context: CallbackContext,
+        user_id: int,
+        page: int,
+    ) -> None:
+        lang = self._get_user_lang(context)
+        user = self._service.admin_get_user(user_id)
+        if user is None:
+            context.user_data.pop(DIRECT_MESSAGE_WAITING_KEY, None)
+            await self._show_users(update, context, page)
+            return
+        name = user["display_name"] or user["username"] or str(user["chat_id"])
+        text = self._i18n.t("admin_message_prompt", lang, name=name)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton(
+                self._i18n.t("admin_message_cancel", lang),
+                callback_data=f"admin:message_cancel:{user_id}:{page}",
+            )
+        ]])
+        await self._safe_edit_message_text(
+            update.callback_query,
+            f"<b>{formatter.esc(text)}</b>",
+            keyboard,
+            "HTML",
+        )
 
     # ------------------------------------------------------------------
     # User's orders

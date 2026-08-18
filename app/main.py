@@ -146,7 +146,7 @@ def main() -> None:
     
     application.add_handler(
         MessageHandler(
-            filters.TEXT & ~filters.COMMAND,
+            ~filters.COMMAND,
             with_typing_action(admin_handler.broadcast_message),
         ),
         group=-1,
