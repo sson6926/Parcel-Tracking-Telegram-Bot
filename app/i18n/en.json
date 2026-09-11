@@ -1,5 +1,7 @@
 {
-  "meta": {"name": "English"},
+  "meta": {
+    "name": "English"
+  },
   "messages": {
     "help_intro": "👋 Welcome to the shipment tracking bot!",
     "help_intro_body": "Track your parcels from multiple carriers in one place — no more jumping between websites or missing important updates.\n\n<b>✨ Key features</b>\n• Add a tracking code and see its status instantly\n• Automatic periodic checks with Telegram notifications on every update\n• Full shipment history for every order\n• Supports: JT Express, Shopee Express, GHN\n\n<b>🚀 Getting started</b>\n1. Tap <b>➕ Add Order</b> → pick a carrier → paste your tracking code\n2. Or just send the tracking code directly in chat — the bot detects the carrier automatically\n3. Tap any order to view its details and full history",
@@ -137,7 +139,8 @@
     "filter_label_all": "all",
     "filter_label_active": "active",
     "filter_label_delivered": "delivered",
-    "filter_label_failed": "failed"
+    "filter_label_failed": "failed",
+    "msg_processing_time": "⏱️ Processing time: {time}s"
   },
   "status": {
     "CREATED": "Created",

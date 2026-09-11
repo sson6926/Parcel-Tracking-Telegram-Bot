@@ -27,18 +27,31 @@ class GHNProvider(TrackingProvider):
 
     carrier_code = "ghn"
 
+    def __init__(self, timeout_seconds: float = 30.0) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._client: httpx.Client | None = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(timeout=self._timeout_seconds)
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
+
     def fetch_event_history(self, tracking_code: str) -> list[TrackingEventDTO]:
         """Fetch tracking history from GHN API."""
         try:
-            with httpx.Client(timeout=30.0) as client:
-                response = client.post(
-                    GHN_API_URL,
-                    headers=GHN_HEADERS,
-                    json={"order_code": tracking_code},
-                )
-                
-                # GHN returns 200 even for errors, check response body
-                data = response.json()
+            client = self._get_client()
+            response = client.post(
+                GHN_API_URL,
+                headers=GHN_HEADERS,
+                json={"order_code": tracking_code},
+            )
+            
+            # GHN returns 200 even for errors, check response body
+            data = response.json()
                 
                 # Don't raise_for_status() - GHN uses 200 for errors too
                 # Parser will handle error codes in response body

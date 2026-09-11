@@ -6,6 +6,7 @@ from telegram.ext import CallbackContext
 
 from app.handlers.base_handler import BaseHandler
 from app.utils import formatter
+from app.utils.timing import update_request_lang
 
 
 class LanguageHandler(BaseHandler):
@@ -60,6 +61,7 @@ class LanguageHandler(BaseHandler):
         elif data.startswith("lang:set:"):
             new_lang = data.split(":")[-1]
             self._set_user_lang(context, new_lang)
+            update_request_lang(new_lang)
             text = f"<b>{formatter.esc(self._i18n.t('lang_changed', new_lang))}</b>"
             await self._safe_edit_message_text(
                 query,

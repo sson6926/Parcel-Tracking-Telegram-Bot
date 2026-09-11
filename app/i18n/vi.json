@@ -1,5 +1,7 @@
 {
-  "meta": {"name": "Tiếng Việt"},
+  "meta": {
+    "name": "Tiếng Việt"
+  },
   "messages": {
     "help_intro": "👋 Chào mừng bạn đến với bot theo dõi đơn hàng!",
     "help_intro_body": "Bot giúp bạn theo dõi đơn hàng từ nhiều đơn vị vận chuyển tại một nơi — không cần vào từng website, không bỏ lỡ cập nhật quan trọng.\n\n<b>✨ Tính năng chính</b>\n• Thêm mã vận đơn và xem trạng thái ngay lập tức\n• Tự động kiểm tra và thông báo khi đơn có cập nhật mới\n• Xem toàn bộ lịch sử hành trình vận chuyển\n• Hỗ trợ nhiều hãng: JT Express, Shopee Express, GHN\n\n<b>🚀 Bắt đầu như thế nào?</b>\n1. Nhấn <b>➕ Thêm mới</b> → chọn hãng → dán mã vận đơn\n2. Hoặc chỉ cần gửi mã vận đơn trực tiếp vào chat — bot tự nhận dạng hãng\n3. Nhấn vào đơn hàng bất kỳ để xem chi tiết và lịch sử",
@@ -137,7 +139,8 @@
     "filter_label_all": "tất cả",
     "filter_label_active": "đang theo dõi",
     "filter_label_delivered": "đã giao",
-    "filter_label_failed": "thất bại"
+    "filter_label_failed": "thất bại",
+    "msg_processing_time": "⏱️ Thời gian xử lý: {time}s"
   },
   "status": {
     "CREATED": "Đã tạo",

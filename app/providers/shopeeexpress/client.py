@@ -16,8 +16,21 @@ logger = logging.getLogger(__name__)
 
 class ShopeeExpressProvider(TrackingProvider):
     carrier_code = "shopeeexpress"
-    _api_url = "https://spx.vn/shipment/order/open/order/get_order_info"
-    _timeout_seconds = 12
+    _DEFAULT_API_URL = "https://spx.vn/shipment/order/open/order/get_order_info"
+
+    def __init__(self, timeout_seconds: float = 12.0, api_url: str = _DEFAULT_API_URL) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._api_url = api_url
+        self._client: httpx.Client | None = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(timeout=self._timeout_seconds)
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
 
     def fetch_latest_event(self, tracking_code: str, current_status: TrackingStatus | None) -> TrackingEventDTO:
         history = self.fetch_event_history(tracking_code)
@@ -81,8 +94,8 @@ class ShopeeExpressProvider(TrackingProvider):
         try:
             started_at = perf_counter()
             logger.debug("Shopee API request start: tracking_code=%s", tracking_code)
-            with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.get(self._api_url, params=params, headers=headers)
+            client = self._get_client()
+            response = client.get(self._api_url, params=params, headers=headers)
             elapsed_ms = int((perf_counter() - started_at) * 1000)
             logger.debug("Shopee API response: tracking_code=%s status=%s elapsed_ms=%s",
                          tracking_code, response.status_code, elapsed_ms)

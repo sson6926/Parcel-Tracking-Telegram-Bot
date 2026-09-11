@@ -1,6 +1,7 @@
 """Tracking operations handlers."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime
@@ -16,7 +17,8 @@ from app.utils import formatter
 
 logger = logging.getLogger(__name__)
 
-ITEMS_PER_PAGE = 10
+PAGE_SIZE = 5
+ITEMS_PER_PAGE = PAGE_SIZE
 
 
 class TrackingHandler(BaseHandler):
@@ -71,10 +73,15 @@ class TrackingHandler(BaseHandler):
             text=f"<b>{formatter.esc(self._i18n.t('adding_order', lang))}</b>",
             parse_mode="HTML",
         )
-        text = self._build_add_tracking_result_text(chat_id, lang, tracking_code, carrier_code)
+        # Offload blocking network & DB calls to a worker thread
+        text = await asyncio.to_thread(
+            self._build_add_tracking_result_text, chat_id, lang, tracking_code, carrier_code
+        )
         
         # Build keyboard with [Details] and [Home] buttons
-        keyboard = self._build_add_result_keyboard(chat_id, lang, tracking_code)
+        keyboard = await asyncio.to_thread(
+            self._build_add_result_keyboard, chat_id, lang, tracking_code
+        )
         
         try:
             await loading_msg.edit_text(
@@ -168,6 +175,7 @@ class TrackingHandler(BaseHandler):
         context: CallbackContext,
         lang: str,
         status_filter: str | None = None,
+        page: int = 1,
     ) -> None:
         if update.callback_query is not None:
             try:
@@ -199,6 +207,15 @@ class TrackingHandler(BaseHandler):
             await self._send_or_edit(update, context, chat_id, text, keyboard, parse_mode="HTML")
             return
 
+        # Pagination calculations
+        total_items = len(trackings)
+        total_pages = max(1, (total_items + PAGE_SIZE - 1) // PAGE_SIZE)
+        current_page = max(1, min(page, total_pages))
+
+        start_idx = (current_page - 1) * PAGE_SIZE
+        end_idx = start_idx + PAGE_SIZE
+        page_trackings = trackings[start_idx:end_idx]
+
         # Build header with filter label if filtering
         if status_filter:
             filter_label = self._i18n.t(f"filter_label_{status_filter}", lang)
@@ -209,7 +226,7 @@ class TrackingHandler(BaseHandler):
         text = f"<b>{formatter.esc(header)}</b>\n\n"
         text += f"<i>{formatter.esc(self._i18n.t('tap_order_hint', lang))}</i>"
         buttons = []
-        for tracking in trackings:
+        for tracking in page_trackings:
             status_icon = formatter.status_icon(tracking.last_status)
             code_1, code_2, code_3 = formatter.split_tracking_code_for_buttons(tracking.tracking_code)
             buttons.append(
@@ -221,6 +238,17 @@ class TrackingHandler(BaseHandler):
                     InlineKeyboardButton("🗑️", callback_data=f"remove:{tracking.id}"),
                 ]
             )
+
+        # Pagination navigation row (only if total_pages > 1)
+        if total_pages > 1:
+            filter_code = status_filter if status_filter else "all"
+            nav_row: list[InlineKeyboardButton] = []
+            if current_page > 1:
+                nav_row.append(InlineKeyboardButton("◀️", callback_data=f"page:{filter_code}:{current_page - 1}"))
+            nav_row.append(InlineKeyboardButton(f"📄 {current_page}/{total_pages}", callback_data="noop"))
+            if current_page < total_pages:
+                nav_row.append(InlineKeyboardButton("▶️", callback_data=f"page:{filter_code}:{current_page + 1}"))
+            buttons.append(nav_row)
 
         # Filter buttons — 1 row, icon + count only
         buttons.append([
@@ -244,11 +272,8 @@ class TrackingHandler(BaseHandler):
     ) -> None:
         """Handle filter selection callback."""
         filter_type = data.split(":")[-1]  # Extract filter type from callback data
-        
-        # Map filter type to status filter parameter
         status_filter = None if filter_type == "all" else filter_type
-        
-        await self._show_order_list(chat_id, update, context, lang, status_filter)
+        await self._show_order_list(chat_id, update, context, lang, status_filter=status_filter, page=1)
 
     async def filter_callback(self, update: Update, context: CallbackContext) -> None:
         """Public callback handler for filter selection."""
@@ -260,6 +285,27 @@ class TrackingHandler(BaseHandler):
         data = query.data
         
         await self._handle_filter_callback(chat_id, update, context, lang, data)
+
+    async def page_callback(self, update: Update, context: CallbackContext) -> None:
+        """Public callback handler for order list pagination."""
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        data = query.data or ""
+        parts = data.split(":")
+        if len(parts) < 3:
+            return
+
+        filter_type = parts[1]
+        status_filter = None if filter_type == "all" else filter_type
+        try:
+            page = int(parts[2])
+        except ValueError:
+            page = 1
+
+        await self._show_order_list(chat_id, update, context, lang, status_filter=status_filter, page=page)
 
     async def order_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query

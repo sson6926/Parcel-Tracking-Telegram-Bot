@@ -19,9 +19,22 @@ logger = logging.getLogger(__name__)
 
 class JTExpressProvider(TrackingProvider):
     carrier_code = "jtexpress"
-    _tracking_url = "https://jtexpress.vn/vi/tracking"
-    _timeout_seconds = 10
-    
+    _DEFAULT_TRACKING_URL = "https://jtexpress.vn/vi/tracking"
+
+    def __init__(self, timeout_seconds: float = 10.0, tracking_url: str = _DEFAULT_TRACKING_URL) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._tracking_url = tracking_url
+        self._client: httpx.Client | None = None
+
+    def _get_client(self) -> httpx.Client:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(timeout=self._timeout_seconds)
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
+
     @staticmethod
     def parse_tracking_code(tracking_code: str) -> tuple[str, str | None]:
         """
@@ -119,13 +132,13 @@ class JTExpressProvider(TrackingProvider):
                 "Referer": f"https://jtexpress.vn/vi/tracking?type=track",
             }
             
-            with httpx.Client(timeout=self._timeout_seconds) as client:
-                response = client.get(
-                    self._tracking_url,
-                    params=params,
-                    headers=headers,
-                    follow_redirects=True,
-                )
+            client = self._get_client()
+            response = client.get(
+                self._tracking_url,
+                params=params,
+                headers=headers,
+                follow_redirects=True,
+            )
             
             elapsed_ms = int((perf_counter() - started_at) * 1000)
             logger.debug("JT page response: tracking_code=%s status=%s elapsed_ms=%s",

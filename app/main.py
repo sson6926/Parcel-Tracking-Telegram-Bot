@@ -38,6 +38,7 @@ from app.handlers import AdminHandler, StartHandler, HelpHandler, LanguageHandle
 from app.scheduler.tracking import TrackingScheduler
 from app.services.tracking import TrackingService
 from app.utils.chat_action import with_typing_action
+from app.utils.timing import TimedBot
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def main() -> None:
     tracking_service.seed_carriers()
     
     logger.info("Building bot application...")
-    application = Application.builder().token(bot_token).build()
+    application = Application.builder().bot(TimedBot(bot_token)).build()
     
     start_handler = StartHandler(i18n, tracking_service)
     help_handler = HelpHandler(i18n, tracking_service)
@@ -160,6 +161,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_timeline_callback), pattern="^order_timeline:"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.remove_callback), pattern="^remove:"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.filter_callback), pattern="^filter:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.page_callback), pattern="^page:"))
     application.add_handler(CallbackQueryHandler(with_typing_action(noop_callback), pattern="^noop"))
     application.add_handler(CallbackQueryHandler(with_typing_action(admin_handler.admin_callback), pattern="^admin:"))
     application.add_handler(CallbackQueryHandler(with_typing_action(start_handler.mission_callback), pattern="^info:mission$"))
