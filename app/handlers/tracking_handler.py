@@ -431,6 +431,8 @@ class TrackingHandler(BaseHandler):
             parse_mode="HTML",
         )
         return ConversationHandler.END
+
+    async def order_notification_callback(self, update: Update, context: CallbackContext) -> None:
         query = update.callback_query
         chat_id = update.effective_chat.id
         tracking_id = int(query.data.split(":")[-1])
