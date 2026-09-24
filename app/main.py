@@ -159,6 +159,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_callback), pattern="^order:[0-9]+$"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_notification_callback), pattern="^order_notify:[0-9]+$"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_timeline_callback), pattern="^order_timeline:"))
+    application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.order_alias_callback), pattern="^order_alias:[0-9]+$"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.remove_callback), pattern="^remove:"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.filter_callback), pattern="^filter:"))
     application.add_handler(CallbackQueryHandler(with_typing_action(tracking_handler.page_callback), pattern="^page:"))
@@ -185,6 +186,12 @@ def main() -> None:
                     MessageHandler(
                         filters.TEXT & ~filters.COMMAND,
                         with_typing_action(tracking_handler.add_tracking_message),
+                    ),
+                ],
+                2: [
+                    MessageHandler(
+                        filters.TEXT & ~filters.COMMAND,
+                        with_typing_action(tracking_handler.set_alias_message),
                     ),
                 ],
             },

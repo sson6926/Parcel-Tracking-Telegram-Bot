@@ -11,6 +11,7 @@ class Tracking(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     carrier_id = Column(Integer, ForeignKey("carriers.id"), nullable=False, index=True)
     tracking_code = Column(String(100), nullable=False, index=True)
+    alias = Column(String(100), nullable=True)
     last_status = Column(String(50), default="CREATED", nullable=False)
     last_event_hash = Column(String(100), nullable=True)
     next_check_at = Column(DateTime(timezone=True), nullable=True)

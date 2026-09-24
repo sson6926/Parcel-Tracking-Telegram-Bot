@@ -133,6 +133,7 @@ class TrackingService:
         telegram_chat_id: int,
         tracking_code: str,
         carrier_code_override: str | None = None,
+        alias: str | None = None,
     ) -> Tracking:
         normalized_code = tracking_code.strip().upper()
         if not normalized_code:
@@ -173,6 +174,8 @@ class TrackingService:
                 existing.is_active = not is_completed
                 existing.is_deleted = False
                 existing.next_check_at = None if is_completed else now
+                if alias:
+                    existing.alias = alias
                 tracking = existing
             else:
                 if user.credits <= 0:
@@ -182,6 +185,7 @@ class TrackingService:
                     user_id=user.id,
                     carrier_id=carrier.id,
                     tracking_code=normalized_code,
+                    alias=alias,
                     last_status=TrackingStatus.CREATED.value,
                     last_event_hash=None,
                     next_check_at=now,
@@ -276,9 +280,27 @@ class TrackingService:
                 .where(Tracking.id == tracking_id, Tracking.user_id == user.id)
             )
 
-    def toggle_tracking_notification(
-        self, telegram_chat_id: int, tracking_id: int
-    ) -> bool | None:
+    def update_alias(
+        self, telegram_chat_id: int, tracking_id: int, alias: str | None
+    ) -> Tracking | None:
+        """Update or clear alias for a tracking order."""
+        with self._session_factory() as session:
+            tracking = session.scalar(
+                select(Tracking)
+                .options(joinedload(Tracking.carrier))
+                .join(User, Tracking.user_id == User.id)
+                .where(
+                    Tracking.id == tracking_id,
+                    User.telegram_chat_id == telegram_chat_id,
+                )
+            )
+            if tracking is None:
+                return None
+            tracking.alias = alias.strip() if alias and alias.strip() else None
+            session.commit()
+            session.refresh(tracking)
+            return tracking
+
         """Toggle notifications; verifies ownership before changing."""
         with self._session_factory() as session:
             tracking = session.scalar(

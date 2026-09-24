@@ -228,7 +228,8 @@ class TrackingHandler(BaseHandler):
         buttons = []
         for tracking in page_trackings:
             status_icon = formatter.status_icon(tracking.last_status)
-            code_1, code_2, code_3 = formatter.split_tracking_code_for_buttons(tracking.tracking_code)
+            title = tracking.alias if tracking.alias else tracking.tracking_code
+            code_1, code_2, code_3 = formatter.split_tracking_code_for_buttons(title)
             buttons.append(
                 [
                     InlineKeyboardButton(status_icon, callback_data=f"order:{tracking.id}"),
@@ -322,6 +323,8 @@ class TrackingHandler(BaseHandler):
             return
 
         text = f"<b>{formatter.esc(self._i18n.t('help_order_detail', lang))}</b>\n\n"
+        if tracking.alias:
+            text += f"🏷️ <b>{formatter.esc(self._i18n.t('detail_alias', lang, alias=tracking.alias))}</b>\n"
         text += f"🔖 {formatter.format_labeled_item(self._i18n.t('detail_code', lang, code=tracking.tracking_code), as_code=True)}\n"
         text += f"🚚 {formatter.format_labeled_item(self._i18n.t('detail_carrier', lang, carrier=tracking.carrier.name))}\n"
         status_icon = formatter.status_icon(tracking.last_status)
@@ -344,6 +347,10 @@ class TrackingHandler(BaseHandler):
                         callback_data=f"order_timeline:{tracking_id}:0",
                     ),
                     InlineKeyboardButton(
+                        self._i18n.t("btn_alias", lang),
+                        callback_data=f"order_alias:{tracking_id}",
+                    ),
+                    InlineKeyboardButton(
                         self._i18n.t("btn_remove", lang),
                         callback_data=f"remove:{tracking_id}",
                     ),
@@ -363,7 +370,67 @@ class TrackingHandler(BaseHandler):
 
         await self._safe_edit_message_text(query, text, reply_markup=keyboard, parse_mode="HTML")
 
-    async def order_notification_callback(self, update: Update, context: CallbackContext) -> None:
+    async def order_alias_callback(self, update: Update, context: CallbackContext) -> int:
+        """Callback when user clicks 'Set Order Name' button."""
+        query = update.callback_query
+        await query.answer()
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        tracking_id = int(query.data.split(":")[-1])
+
+        tracking = self._service.get_tracking_detail(chat_id, tracking_id)
+        if tracking is None:
+            await query.answer(self._i18n.t("order_not_found", lang), show_alert=True)
+            return ConversationHandler.END
+
+        from app.constants.user_state import ALIAS_TRACKING_ID, WAITING_FOR_ALIAS
+        context.user_data[ALIAS_TRACKING_ID] = tracking_id
+
+        text = self._i18n.t("alias_prompt", lang, code=tracking.tracking_code)
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(self._i18n.t("btn_back", lang), callback_data=f"order:{tracking_id}")]]
+        )
+
+        await self._safe_edit_message_text(
+            query,
+            f"<b>{formatter.esc(text)}</b>",
+            reply_markup=keyboard,
+            parse_mode="HTML",
+        )
+        return WAITING_FOR_ALIAS
+
+    async def set_alias_message(self, update: Update, context: CallbackContext) -> int:
+        """Handle user input text for setting order alias."""
+        from app.constants.user_state import ALIAS_TRACKING_ID
+        tracking_id = context.user_data.get(ALIAS_TRACKING_ID)
+        if tracking_id is None or update.message is None:
+            return ConversationHandler.END
+
+        chat_id = update.effective_chat.id
+        lang = self._get_user_lang(context)
+        user_input = update.message.text.strip()
+
+        alias = None if user_input == "-" else user_input
+        updated_tracking = self._service.update_alias(chat_id, tracking_id, alias)
+
+        context.user_data.pop(ALIAS_TRACKING_ID, None)
+        await self._delete_message_quietly(update.message)
+
+        if updated_tracking and updated_tracking.alias:
+            msg = self._i18n.t("alias_updated", lang, alias=updated_tracking.alias)
+        else:
+            msg = self._i18n.t("alias_cleared", lang)
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"<b>{formatter.esc(msg)}</b>",
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(self._i18n.t("btn_detail", lang), callback_data=f"order:{tracking_id}")]]
+            ),
+            parse_mode="HTML",
+        )
+        return ConversationHandler.END
         query = update.callback_query
         chat_id = update.effective_chat.id
         tracking_id = int(query.data.split(":")[-1])

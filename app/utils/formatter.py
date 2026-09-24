@@ -39,6 +39,15 @@ def format_labeled_item(text: str, *, as_code: bool = False, as_italic: bool = F
     return f"<b>{escaped_label}:</b> {rendered_value}"
 
 
+def format_tracking_title(tracking_code: str, alias: str | None = None) -> str:
+    """Format tracking code title with optional alias."""
+    code_esc = esc(tracking_code)
+    if alias and alias.strip():
+        alias_esc = esc(alias.strip())
+        return f"🏷️ <b>{alias_esc}</b> (<code>{code_esc}</code>)"
+    return f"📦 <code>{code_esc}</code>"
+
+
 def status_icon(status_code: str) -> str:
     """Get emoji icon for status code."""
     return STATUS_ICONS.get(status_code, DEFAULT_STATUS_ICON)
