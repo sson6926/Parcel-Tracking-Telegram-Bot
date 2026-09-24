@@ -19,7 +19,7 @@ HandlerCallback = Callable[[Update, CallbackContext], Awaitable[HandlerResult]]
 
 
 def with_typing_action(handler: HandlerCallback[HandlerResult]) -> HandlerCallback[HandlerResult]:
-    """Send a typing indicator and track processing time for user-facing bot actions."""
+    """Track request context and processing time for user-facing bot actions."""
 
     @wraps(handler)
     async def wrapped(update: Update, context: CallbackContext) -> HandlerResult:
@@ -30,20 +30,6 @@ def with_typing_action(handler: HandlerCallback[HandlerResult]) -> HandlerCallba
 
         tokens = set_request_context(chat.id if chat else None, lang=lang)
         try:
-            if chat is not None:
-                try:
-                    await context.bot.send_chat_action(
-                        chat_id=chat.id,
-                        action=ChatAction.TYPING,
-                    )
-                except TelegramError:
-                    # A failed indicator must never prevent the actual action.
-                    logger.debug(
-                        "Could not send typing action to chat %s",
-                        chat.id,
-                        exc_info=True,
-                    )
-
             return await handler(update, context)
         finally:
             reset_request_context(tokens)
